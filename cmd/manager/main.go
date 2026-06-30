@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -44,6 +45,7 @@ func main() {
 	var pollInterval time.Duration
 	var pollPageSize int
 	var maxConcurrentNamespaces int
+	var syncNamespaces string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", envOrDefault("METRICS_BIND_ADDRESS", ":8080"), "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", envOrDefault("HEALTH_PROBE_BIND_ADDRESS", ":8081"), "The address the probe endpoint binds to.")
@@ -56,6 +58,7 @@ func main() {
 	flag.DurationVar(&pollInterval, "poll-interval", envDurationOrDefault("POLL_INTERVAL", 30*time.Second), "OpenAPI polling interval.")
 	flag.IntVar(&pollPageSize, "poll-page-size", envIntOrDefault("POLL_PAGE_SIZE", 100), "OpenAPI list page size. The OpenAPI accepts values from 1 to 100.")
 	flag.IntVar(&maxConcurrentNamespaces, "max-concurrent-namespaces", envIntOrDefault("MAX_CONCURRENT_NAMESPACES", 5), "Maximum namespaces to sync concurrently.")
+	flag.StringVar(&syncNamespaces, "sync-namespaces", envOrDefault("SYNC_NAMESPACES", ""), "Comma-separated namespaces to sync. Empty means all namespaces containing the default OpenAPI Secret.")
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -116,6 +119,7 @@ func main() {
 		Interval:                pollInterval,
 		PageSize:                pollPageSize,
 		MaxConcurrentNamespaces: maxConcurrentNamespaces,
+		SyncNamespaces:          splitCSV(syncNamespaces),
 		AdoptExternal:           true,
 	}
 	if err := mgr.Add(poller); err != nil {
@@ -179,4 +183,19 @@ func envIntOrDefault(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return parsed
+}
+
+func splitCSV(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

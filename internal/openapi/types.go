@@ -1,7 +1,5 @@
 package openapi
 
-import "time"
-
 type Credential struct {
 	AccessKeyID     string
 	SecretAccessKey string
@@ -10,24 +8,24 @@ type Credential struct {
 }
 
 type Template struct {
-	TemplateID                   string
-	TemplateName                 string
-	Description                  string
-	TemplateCategory             string
-	TemplateType                 string
+	TemplateID                   string `json:"id"`
+	TemplateName                 string `json:"name"`
+	Description                  string `json:"description"`
+	TemplateCategory             string `json:"access"`
+	TemplateType                 string `json:"type"`
 	ImageConfig                  *ImageConfig
-	Command                      string
+	Command                      string `json:"startCmd"`
 	Ports                        []int
-	CPU                          int
-	Memory                       int
+	CPU                          int `json:"cpuCount"`
+	Memory                       int `json:"memoryMB"`
 	Envs                         []Env
 	NetworkConfig                *NetworkConfig
 	PreheatConfig                *PreheatConfig
-	InstanceQuota                int
-	Status                       string
-	CanDelete                    bool
-	CreatedAt                    *time.Time
-	UpdatedAt                    *time.Time
+	InstanceQuota                int    `json:"quota"`
+	Status                       string `json:"status"`
+	CanDelete                    bool   `json:"canDelete"`
+	CreatedAt                    string `json:"createdAt"`
+	UpdatedAt                    string `json:"updatedAt"`
 	KlogProjectName              string
 	KlogPoolName                 string
 	RemainingInstanceQuota       int
@@ -37,15 +35,15 @@ type Template struct {
 }
 
 type Sandbox struct {
-	SandboxID           string
-	TemplateID          string
-	TemplateType        string
+	SandboxID           string `json:"sandboxID"`
+	TemplateID          string `json:"templateID"`
+	TemplateType        string `json:"templateType"`
 	TemplateCategory    string
-	Status              string
-	Timeout             int
-	CreateTime          *time.Time
-	EndTime             *time.Time
-	Endpoint            string
+	Status              string `json:"state"`
+	Timeout             int    `json:"timeout"`
+	CreateTime          string `json:"startedAt"`
+	EndTime             string `json:"endAt"`
+	Endpoint            string `json:"domain"`
 	CustomConfiguration *CustomConfiguration
 }
 
@@ -145,21 +143,23 @@ type StartSandboxResponse struct {
 }
 
 type ListTemplatesRequest struct {
-	PageNum  int
-	PageSize int
+	PageNum  int `json:"page"`
+	PageSize int `json:"pageSize"`
 }
 
 type ListSandboxesRequest struct {
-	PageNum  int
-	PageSize int
+	PageNum  int `json:"page"`
+	PageSize int `json:"pageSize"`
 }
 
 type TemplateList struct {
-	Items []Template
-	Total int
+	Items     []Template `json:"templates"`
+	NextToken string     `json:"nextToken"`
+	Total     int        `json:"totalCount"`
 }
 
 type SandboxList struct {
-	Items []Sandbox
-	Total int
+	Items     []Sandbox `json:"sandboxes"`
+	NextToken string    `json:"nextToken"`
+	Total     int       `json:"totalCount"`
 }

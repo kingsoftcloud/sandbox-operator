@@ -88,9 +88,9 @@ func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote opena
 	obj.Status.Phase = TemplatePhase(remote.Status)
 	obj.Status.RawStatus = remote.Status
 	obj.Status.CanDelete = remote.CanDelete
-	obj.Status.CreatedAt = metaTime(remote.CreatedAt)
-	obj.Status.UpdatedAt = metaTime(remote.UpdatedAt)
-	obj.Status.ExternalUpdatedAt = metaTime(remote.UpdatedAt)
+	obj.Status.CreatedAt = metaTimeString(remote.CreatedAt)
+	obj.Status.UpdatedAt = metaTimeString(remote.UpdatedAt)
+	obj.Status.ExternalUpdatedAt = metaTimeString(remote.UpdatedAt)
 	obj.Status.Klog = &sandboxv1.KlogStatus{ProjectName: remote.KlogProjectName, PoolName: remote.KlogPoolName}
 	obj.Status.Quota = &sandboxv1.QuotaStatus{
 		InstanceQuota:                remote.InstanceQuota,
@@ -128,7 +128,7 @@ func ApplySandboxSpecFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox)
 func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
 	obj.Status.ObservedGeneration = obj.Generation
 	obj.Status.SandboxID = remote.SandboxID
-	obj.Status.ExternalUpdatedAt = metaTime(remote.EndTime)
+	obj.Status.ExternalUpdatedAt = metaTimeString(remote.EndTime)
 	obj.Status.Template = &sandboxv1.SandboxTemplateSummary{
 		ID:       remote.TemplateID,
 		Type:     remote.TemplateType,
@@ -137,8 +137,8 @@ func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbo
 	obj.Status.Phase = SandboxPhase(remote.Status)
 	obj.Status.RawStatus = remote.Status
 	obj.Status.TimeoutSeconds = remote.Timeout
-	obj.Status.CreateTime = metaTime(remote.CreateTime)
-	obj.Status.EndTime = metaTime(remote.EndTime)
+	obj.Status.CreateTime = metaTimeString(remote.CreateTime)
+	obj.Status.EndTime = metaTimeString(remote.EndTime)
 	obj.Status.Endpoint = remote.Endpoint
 	if remote.CustomConfiguration != nil {
 		obj.Status.CustomConfiguration = &sandboxv1.SandboxCustomConfiguration{
@@ -327,10 +327,16 @@ func preheatNumber(in *openapi.PreheatConfig) int {
 	return in.Number
 }
 
-func metaTime(t *time.Time) *metav1.Time {
-	if t == nil {
+func metaTimeString(value string) *metav1.Time {
+	if value == "" {
 		return nil
 	}
-	mt := metav1.NewTime(*t)
-	return &mt
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			mt := metav1.NewTime(parsed)
+			return &mt
+		}
+	}
+	return nil
 }

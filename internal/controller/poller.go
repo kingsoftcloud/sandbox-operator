@@ -28,6 +28,7 @@ type Poller struct {
 	PageSize                int
 	MaxConcurrentNamespaces int
 	AdoptExternal           bool
+	SyncNamespaces          []string
 }
 
 func (p *Poller) Run(ctx context.Context) error {
@@ -54,9 +55,16 @@ func (p *Poller) Start(ctx context.Context) error {
 }
 
 func (p *Poller) SyncAll(ctx context.Context) error {
-	var namespaces corev1.NamespaceList
-	if err := p.Client.List(ctx, &namespaces); err != nil {
-		return err
+	namespaces := p.SyncNamespaces
+	if len(namespaces) == 0 {
+		var list corev1.NamespaceList
+		if err := p.Client.List(ctx, &list); err != nil {
+			return err
+		}
+		namespaces = make([]string, 0, len(list.Items))
+		for _, ns := range list.Items {
+			namespaces = append(namespaces, ns.Name)
+		}
 	}
 	limit := p.MaxConcurrentNamespaces
 	if limit <= 0 {
@@ -66,8 +74,7 @@ func (p *Poller) SyncAll(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var firstErr error
-	for _, ns := range namespaces.Items {
-		namespace := ns.Name
+	for _, namespace := range namespaces {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -92,10 +99,17 @@ func (p *Poller) SyncAll(ctx context.Context) error {
 }
 
 func (p *Poller) SyncNamespace(ctx context.Context, namespace string) error {
+	logger := log.FromContext(ctx).WithValues("namespace", namespace)
 	cred, err := p.Credentials.GetOpenAPI(ctx, namespace, nil)
 	if err != nil {
-		return nil
+		if credentials.IsOpenAPICredentialNotFound(err) {
+			logger.V(1).Info("skip namespace without openapi credential")
+			return nil
+		}
+		logger.Error(err, "openapi credential unavailable")
+		return err
 	}
+	logger.V(1).Info("sync namespace with openapi credential", "secret", cred.SecretName)
 	openapiCred := mapper.OpenAPICredential(cred)
 	if err := p.syncTemplates(ctx, namespace, openapiCred); err != nil {
 		return err
@@ -104,6 +118,7 @@ func (p *Poller) SyncNamespace(ctx context.Context, namespace string) error {
 }
 
 func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred openapi.Credential) error {
+	logger := log.FromContext(ctx).WithValues("namespace", namespace)
 	var local sandboxv1.SandboxTemplateList
 	if err := p.Client.List(ctx, &local, client.InNamespace(namespace)); err != nil {
 		return err
@@ -153,6 +168,8 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 		if err != nil {
 			return err
 		}
+		logger.V(1).Info("listed sandbox templates from openapi", "remoteCount", len(remotes), "localCount", len(local.Items))
+		adopted := 0
 		for _, remote := range remotes {
 			if remote.TemplateID == "" || knownIDs[remote.TemplateID] {
 				continue
@@ -179,12 +196,18 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 			}
 			knownIDs[remote.TemplateID] = true
 			knownNames[name] = true
+			adopted++
+			logger.Info("adopted sandbox template from openapi", "name", name, "templateID", remote.TemplateID)
+		}
+		if adopted > 0 {
+			logger.Info("adopted sandbox templates from openapi", "count", adopted)
 		}
 	}
 	return nil
 }
 
 func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred openapi.Credential) error {
+	logger := log.FromContext(ctx).WithValues("namespace", namespace)
 	var local sandboxv1.SandboxList
 	if err := p.Client.List(ctx, &local, client.InNamespace(namespace)); err != nil {
 		return err
@@ -240,6 +263,8 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 		if err != nil {
 			return err
 		}
+		logger.V(1).Info("listed sandboxes from openapi", "remoteCount", len(remotes), "localCount", len(local.Items))
+		adopted := 0
 		for _, remote := range remotes {
 			if remote.SandboxID == "" || knownIDs[remote.SandboxID] {
 				continue
@@ -272,6 +297,11 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 			}
 			knownIDs[remote.SandboxID] = true
 			knownNames[name] = true
+			adopted++
+			logger.Info("adopted sandbox from openapi", "name", name, "sandboxID", remote.SandboxID)
+		}
+		if adopted > 0 {
+			logger.Info("adopted sandboxes from openapi", "count", adopted)
 		}
 	}
 	return nil

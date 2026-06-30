@@ -144,7 +144,7 @@ func (c *Client) action(ctx context.Context, cred Credential, action string, pay
 		data = envelope.Obj
 	}
 	if len(data) == 0 {
-		return nil
+		data = responseBody
 	}
 	if err := json.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("decode openapi %s response: %w", action, err)

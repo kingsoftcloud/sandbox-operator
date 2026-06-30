@@ -2,6 +2,7 @@ package credentials
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +40,20 @@ type RuntimeCredential struct {
 	SecretName      string
 }
 
+type OpenAPICredentialNotFoundError struct {
+	Namespace string
+	Name      string
+}
+
+func (e *OpenAPICredentialNotFoundError) Error() string {
+	return fmt.Sprintf("openapi credential secret %s/%s not found", e.Namespace, e.Name)
+}
+
+func IsOpenAPICredentialNotFound(err error) bool {
+	var target *OpenAPICredentialNotFoundError
+	return errors.As(err, &target)
+}
+
 type Manager struct {
 	client                   client.Client
 	defaultOpenAPISecretName string
@@ -60,7 +75,7 @@ func (m *Manager) GetOpenAPI(ctx context.Context, namespace string, ref *sandbox
 	var secret corev1.Secret
 	if err := m.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("openapi credential secret %s/%s not found", namespace, name)
+			return nil, &OpenAPICredentialNotFoundError{Namespace: namespace, Name: name}
 		}
 		return nil, err
 	}
