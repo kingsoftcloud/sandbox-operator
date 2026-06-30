@@ -1,6 +1,7 @@
 package mapper
 
 import (
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,20 +28,21 @@ func TemplateCreateRequest(in *sandboxv1.SandboxTemplate, runtime RuntimeCredent
 	return openapi.CreateTemplateRequest{
 		TemplateName:     in.Name,
 		Description:      spec.Description,
-		TemplateCategory: spec.Category,
-		TemplateType:     spec.Type,
-		ImageConfig:      imageToOpenAPI(spec.Image),
+		TemplateCategory: templateAccess(spec.Category),
+		TemplateType:     templateType(spec.Type),
+		Image:            imageURL(spec.Image),
+		ImageSource:      imageSource(spec.Image),
 		Command:          spec.Command,
 		Ports:            append([]int(nil), spec.Ports...),
 		CPU:              resourceCPU(spec.Resources),
-		Memory:           resourceMemory(spec.Resources),
-		Envs:             envsToOpenAPI(spec.Env),
+		Memory:           resourceMemoryMB(spec.Resources),
+		Envs:             envsToMap(spec.Env),
 		NetworkConfig:    networkToOpenAPI(spec.Network),
-		PreheatConfig:    preheatToOpenAPI(spec.Preheat),
+		TargetPoolSize:   preheatTargetPoolSize(spec.Preheat),
 		InstanceQuota:    spec.InstanceQuota,
-		KS3MountConfig:   mountToOpenAPI(spec.Ks3MountConfig, runtime.KS3),
-		KPFSMountConfig:  mountToOpenAPI(spec.KpfsMountConfig, runtime.KPFS),
-		KlogEnabled:      spec.Klog != nil && spec.Klog.Enabled,
+		KS3MountConfig:   mountToOpenAPI(spec.Ks3MountConfig, runtime.KS3, "ks3"),
+		KPFSMountConfig:  mountToOpenAPI(spec.KpfsMountConfig, runtime.KPFS, "kpfs"),
+		KlogConfig:       klogToOpenAPI(spec.Klog),
 	}
 }
 
@@ -55,11 +57,10 @@ func TemplateUpdateRequest(in *sandboxv1.SandboxTemplate, runtime RuntimeCredent
 func SandboxStartRequest(in *sandboxv1.Sandbox, templateID string, runtime RuntimeCredentials) openapi.StartSandboxRequest {
 	spec := in.Spec
 	return openapi.StartSandboxRequest{
-		TemplateID:      templateID,
-		Timeout:         spec.TimeoutSeconds,
-		Envs:            envsToOpenAPI(spec.Env),
-		KS3MountConfig:  mountToOpenAPI(spec.Ks3MountConfig, runtime.KS3),
-		KPFSMountConfig: mountToOpenAPI(spec.KpfsMountConfig, runtime.KPFS),
+		TemplateID: templateID,
+		Timeout:    spec.TimeoutSeconds,
+		EnvVars:    envsToMap(spec.Env),
+		Metadata:   sandboxMetadata(spec, runtime),
 	}
 }
 
@@ -72,34 +73,36 @@ func ApplyTemplateSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi
 	obj.Spec.Description = remote.Description
 	obj.Spec.Category = remote.TemplateCategory
 	obj.Spec.Type = remote.TemplateType
-	obj.Spec.Image = imageFromOpenAPI(remote.ImageConfig, obj.Spec.Image)
+	obj.Spec.Image = imageFromOpenAPI(remote, obj.Spec.Image)
 	obj.Spec.Command = remote.Command
 	obj.Spec.Ports = append([]int(nil), remote.Ports...)
-	obj.Spec.Resources = &sandboxv1.ResourceSpec{CPU: remote.CPU, MemoryGB: remote.Memory}
-	obj.Spec.Env = envsFromOpenAPI(remote.Envs)
+	obj.Spec.Resources = &sandboxv1.ResourceSpec{CPU: remote.CPU, MemoryGB: memoryGBFromMB(remote.Memory)}
+	obj.Spec.Env = envsFromMap(remote.Envs)
 	obj.Spec.Network = networkFromOpenAPI(remote.NetworkConfig)
-	obj.Spec.Preheat = preheatFromOpenAPI(remote.PreheatConfig)
+	obj.Spec.Preheat = preheatFromTargetPoolSize(remote.TargetPoolSize)
 	obj.Spec.InstanceQuota = remote.InstanceQuota
 }
 
 func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.Template) {
 	obj.Status.ObservedGeneration = obj.Generation
-	obj.Status.TemplateID = remote.TemplateID
+	obj.Status.TemplateID = remote.Identifier()
 	obj.Status.Phase = TemplatePhase(remote.Status)
 	obj.Status.RawStatus = remote.Status
 	obj.Status.CanDelete = remote.CanDelete
 	obj.Status.CreatedAt = metaTimeString(remote.CreatedAt)
 	obj.Status.UpdatedAt = metaTimeString(remote.UpdatedAt)
 	obj.Status.ExternalUpdatedAt = metaTimeString(remote.UpdatedAt)
-	obj.Status.Klog = &sandboxv1.KlogStatus{ProjectName: remote.KlogProjectName, PoolName: remote.KlogPoolName}
+	if remote.KlogConfig != nil {
+		obj.Status.Klog = &sandboxv1.KlogStatus{ProjectName: remote.KlogConfig.ProjectName, PoolName: remote.KlogConfig.PoolNameContainer}
+	}
 	obj.Status.Quota = &sandboxv1.QuotaStatus{
 		InstanceQuota:                remote.InstanceQuota,
 		RemainingInstanceQuota:       remote.RemainingInstanceQuota,
 		RemainingSystemInstanceQuota: remote.RemainingSystemInstanceQuota,
 	}
 	obj.Status.Preheat = &sandboxv1.PreheatStatus{
-		Enabled:                 remote.PreheatConfig != nil && remote.PreheatConfig.Enabled,
-		Number:                  preheatNumber(remote.PreheatConfig),
+		Enabled:                 remote.TargetPoolSize > 0,
+		Number:                  remote.TargetPoolSize,
 		PreheatedInstanceNumber: remote.PreheatedInstanceNumber,
 	}
 	if remote.CredentialAccessKeyIDMasked != "" {
@@ -151,8 +154,12 @@ func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbo
 
 func TemplatePhase(raw string) sandboxv1.Phase {
 	switch raw {
-	case "Ready", "READY":
+	case "Ready", "READY", "ready":
 		return sandboxv1.PhaseReady
+	case "creating", "CREATING":
+		return sandboxv1.PhasePending
+	case "error", "ERROR":
+		return sandboxv1.PhaseFailed
 	case "":
 		return sandboxv1.PhasePending
 	default:
@@ -162,19 +169,19 @@ func TemplatePhase(raw string) sandboxv1.Phase {
 
 func SandboxPhase(raw string) sandboxv1.Phase {
 	switch raw {
-	case "STARTING":
+	case "STARTING", "starting":
 		return sandboxv1.PhaseStarting
-	case "RUNNING":
+	case "RUNNING", "running":
 		return sandboxv1.PhaseRunning
-	case "KILLING":
+	case "KILLING", "killing":
 		return sandboxv1.PhaseDeleting
-	case "FAILED":
+	case "FAILED", "failed":
 		return sandboxv1.PhaseFailed
-	case "UNHEALTHY":
+	case "UNHEALTHY", "unhealthy":
 		return sandboxv1.PhaseUnhealthy
-	case "PAUSED":
+	case "PAUSED", "paused":
 		return sandboxv1.PhasePaused
-	case "RESUMING":
+	case "RESUMING", "resuming":
 		return sandboxv1.PhaseResuming
 	case "":
 		return sandboxv1.PhaseUnknown
@@ -183,36 +190,63 @@ func SandboxPhase(raw string) sandboxv1.Phase {
 	}
 }
 
-func imageToOpenAPI(in *sandboxv1.ImageSpec) *openapi.ImageConfig {
+func imageURL(in *sandboxv1.ImageSpec) string {
 	if in == nil {
-		return nil
+		return ""
 	}
-	return &openapi.ImageConfig{
-		Source:             in.Source,
-		ImageURL:           in.ImageURL,
-		ImageEndpoint:      in.ImageEndpoint,
-		ImageNamespace:     in.ImageNamespace,
-		ImageName:          in.ImageName,
-		ImageTag:           in.ImageTag,
-		RegistryInstanceID: in.RegistryInstanceID,
+	if in.ImageURL != "" {
+		return in.ImageURL
+	}
+	if in.ImageName != "" && in.ImageTag != "" {
+		return in.ImageName + ":" + in.ImageTag
+	}
+	return in.ImageName
+}
+
+func imageSource(in *sandboxv1.ImageSpec) string {
+	if in == nil {
+		return ""
+	}
+	return in.Source
+}
+
+func templateAccess(value string) string {
+	switch strings.ToLower(value) {
+	case "private":
+		return "private"
+	case "public":
+		return "public"
+	default:
+		return value
 	}
 }
 
-func imageFromOpenAPI(in *openapi.ImageConfig, previous *sandboxv1.ImageSpec) *sandboxv1.ImageSpec {
-	if in == nil {
+func templateType(value string) string {
+	switch strings.ToLower(value) {
+	case "custom":
+		return "custom"
+	case "browser":
+		return "browser"
+	case "code":
+		return "code"
+	case "aio":
+		return "AIO"
+	default:
+		return value
+	}
+}
+
+func imageFromOpenAPI(remote openapi.Template, previous *sandboxv1.ImageSpec) *sandboxv1.ImageSpec {
+	if remote.Image == "" && remote.ImageSource == "" {
 		return previous
 	}
 	out := &sandboxv1.ImageSpec{}
 	if previous != nil {
 		out.CredentialRef = previous.CredentialRef
 	}
-	out.Source = in.Source
-	out.ImageURL = in.ImageURL
-	out.ImageEndpoint = in.ImageEndpoint
-	out.ImageNamespace = in.ImageNamespace
-	out.ImageName = in.ImageName
-	out.ImageTag = in.ImageTag
-	out.RegistryInstanceID = in.RegistryInstanceID
+	out.Source = remote.ImageSource
+	out.ImageURL = remote.Image
+	out.ImageEndpoint = remote.CredentialServer
 	return out
 }
 
@@ -247,31 +281,31 @@ func networkFromOpenAPI(in *openapi.NetworkConfig) *sandboxv1.NetworkSpec {
 	}
 }
 
-func preheatToOpenAPI(in *sandboxv1.PreheatSpec) *openapi.PreheatConfig {
-	if in == nil {
+func preheatFromTargetPoolSize(size int) *sandboxv1.PreheatSpec {
+	if size <= 0 {
 		return nil
 	}
-	return &openapi.PreheatConfig{Enabled: in.Enabled, Number: in.Number}
+	return &sandboxv1.PreheatSpec{Enabled: true, Number: size}
 }
 
-func preheatFromOpenAPI(in *openapi.PreheatConfig) *sandboxv1.PreheatSpec {
-	if in == nil {
-		return nil
-	}
-	return &sandboxv1.PreheatSpec{Enabled: in.Enabled, Number: in.Number}
-}
-
-func mountToOpenAPI(in *sandboxv1.MountConfig, cred *credentials.RuntimeCredential) *openapi.MountConfig {
+func mountToOpenAPI(in *sandboxv1.MountConfig, cred *credentials.RuntimeCredential, kind string) *openapi.MountConfig {
 	if in == nil {
 		return nil
 	}
 	out := &openapi.MountConfig{
-		Enabled:     in.Enabled,
 		MountPoints: mountPointsToOpenAPI(in.MountPoints),
 	}
+	switch kind {
+	case "ks3":
+		out.EnableKS3 = in.Enabled
+	case "kpfs":
+		out.EnableKPFS = in.Enabled
+	}
 	if cred != nil {
-		out.AccessKey = cred.AccessKey
-		out.SecretAccessKey = cred.SecretAccessKey
+		out.Credential = &openapi.MountCredential{
+			AccessKey:       cred.AccessKey,
+			SecretAccessKey: cred.SecretAccessKey,
+		}
 	}
 	return out
 }
@@ -281,6 +315,7 @@ func mountPointsToOpenAPI(in []sandboxv1.MountPoint) []openapi.MountPoint {
 	for _, item := range in {
 		out = append(out, openapi.MountPoint{
 			BucketName:     item.BucketName,
+			BucketPath:     item.RemotePath,
 			FileSystemName: item.FileSystemName,
 			RemotePath:     item.RemotePath,
 			LocalMountPath: item.LocalMountPath,
@@ -290,18 +325,21 @@ func mountPointsToOpenAPI(in []sandboxv1.MountPoint) []openapi.MountPoint {
 	return out
 }
 
-func envsToOpenAPI(in []sandboxv1.EnvVar) []openapi.Env {
-	out := make([]openapi.Env, 0, len(in))
+func envsToMap(in []sandboxv1.EnvVar) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
 	for _, item := range in {
-		out = append(out, openapi.Env{Key: item.Key, Value: item.Value})
+		out[item.Key] = item.Value
 	}
 	return out
 }
 
-func envsFromOpenAPI(in []openapi.Env) []sandboxv1.EnvVar {
+func envsFromMap(in map[string]string) []sandboxv1.EnvVar {
 	out := make([]sandboxv1.EnvVar, 0, len(in))
-	for _, item := range in {
-		out = append(out, sandboxv1.EnvVar{Key: item.Key, Value: item.Value})
+	for key, value := range in {
+		out = append(out, sandboxv1.EnvVar{Key: key, Value: value})
 	}
 	return out
 }
@@ -313,18 +351,77 @@ func resourceCPU(in *sandboxv1.ResourceSpec) int {
 	return in.CPU
 }
 
-func resourceMemory(in *sandboxv1.ResourceSpec) int {
+func resourceMemoryMB(in *sandboxv1.ResourceSpec) int {
 	if in == nil {
 		return 0
 	}
-	return in.MemoryGB
+	return in.MemoryGB * 1024
 }
 
-func preheatNumber(in *openapi.PreheatConfig) int {
+func memoryGBFromMB(value int) int {
+	if value <= 0 {
+		return 0
+	}
+	return (value + 1023) / 1024
+}
+
+func preheatTargetPoolSize(in *sandboxv1.PreheatSpec) int {
 	if in == nil {
+		return 0
+	}
+	if !in.Enabled {
 		return 0
 	}
 	return in.Number
+}
+
+func klogToOpenAPI(in *sandboxv1.KlogSpec) *openapi.KlogConfig {
+	if in == nil {
+		return nil
+	}
+	return &openapi.KlogConfig{Enabled: in.Enabled}
+}
+
+func sandboxMetadata(spec sandboxv1.SandboxSpec, runtime RuntimeCredentials) map[string]interface{} {
+	metadata := map[string]interface{}{}
+	var mounts []map[string]interface{}
+	mounts = appendVolumeMounts(mounts, "ks3", spec.Ks3MountConfig, runtime.KS3)
+	mounts = appendVolumeMounts(mounts, "kpfs", spec.KpfsMountConfig, runtime.KPFS)
+	if len(mounts) > 0 {
+		metadata["volumeMounts"] = mounts
+	}
+	if len(metadata) == 0 {
+		return nil
+	}
+	return metadata
+}
+
+func appendVolumeMounts(out []map[string]interface{}, kind string, cfg *sandboxv1.MountConfig, cred *credentials.RuntimeCredential) []map[string]interface{} {
+	if cfg == nil || !cfg.Enabled {
+		return out
+	}
+	for _, mount := range cfg.MountPoints {
+		item := map[string]interface{}{
+			"type":     kind,
+			"target":   mount.LocalMountPath,
+			"readOnly": mount.ReadOnly,
+		}
+		switch kind {
+		case "ks3":
+			item["source"] = mount.BucketName + mount.RemotePath
+		case "kpfs":
+			item["source"] = mount.FileSystemName + mount.RemotePath
+		}
+		if cred != nil {
+			item["accessKeyId"] = cred.AccessKey
+			item["accessKeySecret"] = cred.SecretAccessKey
+			if cred.Token != "" {
+				item["token"] = cred.Token
+			}
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func metaTimeString(value string) *metav1.Time {

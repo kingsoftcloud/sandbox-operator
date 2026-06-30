@@ -8,30 +8,48 @@ type Credential struct {
 }
 
 type Template struct {
-	TemplateID                   string `json:"id"`
+	ID                           string `json:"id"`
+	TemplateID                   string `json:"templateID,omitempty"`
 	TemplateName                 string `json:"name"`
 	Description                  string `json:"description"`
 	TemplateCategory             string `json:"access"`
 	TemplateType                 string `json:"type"`
-	ImageConfig                  *ImageConfig
+	Image                        string `json:"image"`
+	ImageSource                  string `json:"imageSource"`
+	CredentialServer             string `json:"credentialServer"`
+	CredentialUsername           string `json:"credentialUname"`
+	CredentialPassword           string `json:"credentialPwd"`
 	Command                      string `json:"startCmd"`
 	Ports                        []int
-	CPU                          int `json:"cpuCount"`
-	Memory                       int `json:"memoryMB"`
-	Envs                         []Env
-	NetworkConfig                *NetworkConfig
-	PreheatConfig                *PreheatConfig
-	InstanceQuota                int    `json:"quota"`
-	Status                       string `json:"status"`
-	CanDelete                    bool   `json:"canDelete"`
-	CreatedAt                    string `json:"createdAt"`
-	UpdatedAt                    string `json:"updatedAt"`
-	KlogProjectName              string
-	KlogPoolName                 string
+	CPU                          int               `json:"cpuCount"`
+	Memory                       int               `json:"memoryMB"`
+	DiskSizeMB                   int64             `json:"diskSizeMB,omitempty"`
+	Envs                         map[string]string `json:"envs"`
+	NetworkConfig                *NetworkConfig    `json:"networkConfig"`
+	TargetPoolSize               int               `json:"targetPoolSize"`
+	InstanceQuota                int               `json:"quota"`
+	Status                       string            `json:"status"`
+	CanDelete                    bool              `json:"canDelete"`
+	CreatedAt                    string            `json:"createdAt"`
+	UpdatedAt                    string            `json:"updatedAt"`
+	KlogProjectName              string            `json:"-"`
+	KlogPoolName                 string            `json:"-"`
 	RemainingInstanceQuota       int
 	RemainingSystemInstanceQuota int
 	PreheatedInstanceNumber      int
+	KS3MountConfig               *MountConfig `json:"ks3MountConfig"`
+	KPFSMountConfig              *MountConfig `json:"kpfsMountConfig"`
+	KlogConfig                   *KlogConfig  `json:"klogConfig"`
+	SkillConfig                  *SkillConfig `json:"skillConfig,omitempty"`
+	DataDisks                    []DataDisk   `json:"dataDisks,omitempty"`
 	CredentialAccessKeyIDMasked  string
+}
+
+func (t Template) Identifier() string {
+	if t.ID != "" {
+		return t.ID
+	}
+	return t.TemplateID
 }
 
 type Sandbox struct {
@@ -44,50 +62,42 @@ type Sandbox struct {
 	CreateTime          string `json:"startedAt"`
 	EndTime             string `json:"endAt"`
 	Endpoint            string `json:"domain"`
+	URLs                *URLs  `json:"urls"`
+	EnvdAccessToken     string `json:"envdAccessToken"`
 	CustomConfiguration *CustomConfiguration
 }
 
-type ImageConfig struct {
-	Source             string
-	ImageURL           string
-	ImageEndpoint      string
-	ImageNamespace     string
-	ImageName          string
-	ImageTag           string
-	RegistryInstanceID string
-}
-
 type NetworkConfig struct {
-	PublicNetworkEnable        bool
-	PrivateNetworkEnable       bool
-	SharedInternetAccessEnable bool
-	VPCID                      string
-	SubnetID                   string
-}
-
-type PreheatConfig struct {
-	Enabled bool
-	Number  int
-}
-
-type Env struct {
-	Key   string
-	Value string
+	PublicNetworkEnable        bool   `json:"enablePublic"`
+	PrivateNetworkEnable       bool   `json:"enablePrivate"`
+	SharedInternetAccessEnable bool   `json:"changeDefaultRoute"`
+	VPCID                      string `json:"userVpcId"`
+	SubnetID                   string `json:"userSubnetId"`
+	SecurityID                 string `json:"userSgId"`
+	CIDRBlock                  string `json:"cidrBlock"`
+	AvailabilityZone           string `json:"availabilityZone,omitempty"`
 }
 
 type MountConfig struct {
-	Enabled         bool
-	AccessKey       string
-	SecretAccessKey string
-	MountPoints     []MountPoint
+	EnableKS3   bool             `json:"enableKs3,omitempty"`
+	EnableKPFS  bool             `json:"enableKpfs,omitempty"`
+	Credential  *MountCredential `json:"credentials,omitempty"`
+	MountPoints []MountPoint     `json:"mountPoints,omitempty"`
+}
+
+type MountCredential struct {
+	AccessKey       string `json:"accessKey,omitempty"`
+	SecretAccessKey string `json:"secretAccessKey,omitempty"`
 }
 
 type MountPoint struct {
-	BucketName     string
-	FileSystemName string
-	RemotePath     string
-	LocalMountPath string
-	ReadOnly       bool
+	BucketName     string `json:"bucketName,omitempty"`
+	BucketPath     string `json:"bucketPath,omitempty"`
+	FileSystemName string `json:"fileSystemName,omitempty"`
+	RemotePath     string `json:"remotePath,omitempty"`
+	LocalMountPath string `json:"localMountPath,omitempty"`
+	ReadOnly       bool   `json:"readOnly,omitempty"`
+	Token          string `json:"token,omitempty"`
 }
 
 type CustomConfiguration struct {
@@ -96,50 +106,78 @@ type CustomConfiguration struct {
 	Command  string
 }
 
+type URLs struct {
+	CdpURL      string `json:"CdpUrl,omitempty"`
+	NoVncURL    string `json:"NoVncUrl,omitempty"`
+	Code        string `json:"CodeUrl,omitempty"`
+	AppURL      string `json:"AppUrl,omitempty"`
+	TerminalURL string `json:"TerminalUrl,omitempty"`
+	VscodeURL   string `json:"VscodeUrl,omitempty"`
+}
+
+type KlogConfig struct {
+	Enabled           bool     `json:"enable"`
+	AccessKey         string   `json:"accessKey,omitempty"`
+	SecretKey         string   `json:"secretKey,omitempty"`
+	ProjectName       string   `json:"projectName,omitempty"`
+	KlogEndpoint      string   `json:"klogEndpoint,omitempty"`
+	PoolNameContainer string   `json:"poolNameContainer,omitempty"`
+	PoolNameHost      string   `json:"poolNameHost,omitempty"`
+	Rules             []string `json:"rules,omitempty"`
+}
+
 type CreateTemplateRequest struct {
-	TemplateName     string
-	Description      string
-	TemplateCategory string
-	TemplateType     string
-	ImageConfig      *ImageConfig
-	Command          string
-	Ports            []int
-	CPU              int
-	Memory           int
-	Envs             []Env
-	NetworkConfig    *NetworkConfig
-	PreheatConfig    *PreheatConfig
-	InstanceQuota    int
-	KS3MountConfig   *MountConfig
-	KPFSMountConfig  *MountConfig
-	KlogEnabled      bool
+	TemplateName          string            `json:"name,omitempty"`
+	Alias                 string            `json:"alias,omitempty"`
+	Description           string            `json:"description,omitempty"`
+	TemplateCategory      string            `json:"access,omitempty"`
+	IsPublic              *bool             `json:"isPublic,omitempty"`
+	TemplateType          string            `json:"type,omitempty"`
+	Image                 string            `json:"image,omitempty"`
+	CredentialServer      string            `json:"credentialServer,omitempty"`
+	CredentialUsername    string            `json:"credentialUname,omitempty"`
+	CredentialPassword    string            `json:"credentialPwd,omitempty"`
+	ImageSource           string            `json:"imageSource,omitempty"`
+	Command               string            `json:"startCmd,omitempty"`
+	Ports                 []int             `json:"ports,omitempty"`
+	CPU                   int               `json:"cpuCount,omitempty"`
+	Memory                int               `json:"memoryMB,omitempty"`
+	Envs                  map[string]string `json:"envs,omitempty"`
+	NetworkConfig         *NetworkConfig    `json:"networkConfig,omitempty"`
+	TargetPoolSize        int               `json:"targetPoolSize,omitempty"`
+	InstanceQuota         int               `json:"quota,omitempty"`
+	WarmPoolImagePullOnly *bool             `json:"warmPoolImagePullOnly,omitempty"`
+	KS3MountConfig        *MountConfig      `json:"ks3MountConfig,omitempty"`
+	KPFSMountConfig       *MountConfig      `json:"kpfsMountConfig,omitempty"`
+	KlogConfig            *KlogConfig       `json:"klogConfig,omitempty"`
 }
 
 type CreateTemplateResponse struct {
-	TemplateID      string
-	KlogProjectName string
-	KlogPoolName    string
+	TemplateID      string `json:"templateID"`
+	KlogProjectName string `json:"klogProjectName"`
+	KlogPoolName    string `json:"poolNameContainer"`
 }
 
 type UpdateTemplateRequest struct {
-	TemplateID string
+	TemplateID string `json:"templateID,omitempty"`
 	CreateTemplateRequest
 }
 
 type StartSandboxRequest struct {
-	TemplateID      string
-	Timeout         int
-	Envs            []Env
-	KS3MountConfig  *MountConfig
-	KPFSMountConfig *MountConfig
+	TemplateID          string                 `json:"templateID"`
+	Timeout             int                    `json:"timeout,omitempty"`
+	AllowInternetAccess *bool                  `json:"allowInternetAccess,omitempty"`
+	EnvVars             map[string]string      `json:"envVars,omitempty"`
+	Metadata            map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type StartSandboxResponse struct {
-	SandboxID  string
-	Endpoint   string
-	TemplateID string
-	Token      string
-	Timeout    int
+	SandboxID          string `json:"sandboxID"`
+	Endpoint           string `json:"domain"`
+	TemplateID         string `json:"templateID"`
+	Token              string `json:"envdAccessToken"`
+	TrafficAccessToken string `json:"trafficAccessToken"`
+	Timeout            int
 }
 
 type ListTemplatesRequest struct {

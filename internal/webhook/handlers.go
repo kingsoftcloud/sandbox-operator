@@ -222,7 +222,7 @@ func (h *Handler) handleClaim(ctx context.Context, req admission.Request) admiss
 		req := openapi.StartSandboxRequest{
 			TemplateID: templateID,
 			Timeout:    obj.Spec.TimeoutSeconds,
-			Envs:       mapper.SandboxStartRequest(&sandboxv1.Sandbox{Spec: sandboxv1.SandboxSpec{Env: obj.Spec.Env}}, templateID, mapper.RuntimeCredentials{}).Envs,
+			EnvVars:    mapper.SandboxStartRequest(&sandboxv1.Sandbox{Spec: sandboxv1.SandboxSpec{Env: obj.Spec.Env}}, templateID, mapper.RuntimeCredentials{}).EnvVars,
 		}
 		started, err := h.OpenAPI.StartSandbox(ctx, mapper.OpenAPICredential(cred), req)
 		if err != nil {

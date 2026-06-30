@@ -289,12 +289,12 @@ func (c *Client) UpdateTemplate(ctx context.Context, cred Credential, req Update
 }
 
 func (c *Client) DeleteTemplate(ctx context.Context, cred Credential, templateID string) error {
-	return c.action(ctx, cred, "DeleteSandboxTemplate", map[string]string{"TemplateId": templateID}, nil)
+	return c.action(ctx, cred, "DeleteSandboxTemplate", map[string]string{"templateID": templateID}, nil)
 }
 
 func (c *Client) GetTemplate(ctx context.Context, cred Credential, templateID string) (*Template, error) {
 	var out Template
-	return &out, c.action(ctx, cred, "GetSandboxTemplate", map[string]string{"TemplateId": templateID}, &out)
+	return &out, c.action(ctx, cred, "GetSandboxTemplate", map[string]string{"templateID": templateID}, &out)
 }
 
 func (c *Client) ListTemplates(ctx context.Context, cred Credential, req ListTemplatesRequest) (*TemplateList, error) {
@@ -308,12 +308,12 @@ func (c *Client) StartSandbox(ctx context.Context, cred Credential, req StartSan
 }
 
 func (c *Client) DeleteSandbox(ctx context.Context, cred Credential, instanceIDs []string) error {
-	return c.action(ctx, cred, "DeleteSandboxInstance", map[string][]string{"InstanceIds": instanceIDs}, nil)
+	return c.action(ctx, cred, "DeleteSandboxInstance", map[string][]string{"sandboxIDs": instanceIDs}, nil)
 }
 
 func (c *Client) GetSandbox(ctx context.Context, cred Credential, instanceID string) (*Sandbox, error) {
 	var out Sandbox
-	return &out, c.action(ctx, cred, "GetSandboxInstance", map[string]string{"InstanceId": instanceID}, &out)
+	return &out, c.action(ctx, cred, "GetSandboxInstance", map[string]string{"sandboxID": instanceID}, &out)
 }
 
 func (c *Client) ListSandboxes(ctx context.Context, cred Credential, req ListSandboxesRequest) (*SandboxList, error) {

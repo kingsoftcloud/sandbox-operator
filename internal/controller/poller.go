@@ -171,10 +171,15 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 		logger.V(1).Info("listed sandbox templates from openapi", "remoteCount", len(remotes), "localCount", len(local.Items))
 		adopted := 0
 		for _, remote := range remotes {
-			if remote.TemplateID == "" || knownIDs[remote.TemplateID] {
+			templateID := remote.Identifier()
+			if templateID == "" {
+				logger.Info("skip openapi template without id", "templateName", remote.TemplateName, "status", remote.Status)
 				continue
 			}
-			name := uniqueName(sanitizeName(remote.TemplateName, "template-"+shortID(remote.TemplateID)), knownNames)
+			if knownIDs[templateID] {
+				continue
+			}
+			name := uniqueName(sanitizeName(remote.TemplateName, "template-"+shortID(templateID)), knownNames)
 			obj := &sandboxv1.SandboxTemplate{
 				TypeMeta: metav1.TypeMeta{APIVersion: sandboxv1.GroupVersion.String(), Kind: "SandboxTemplate"},
 				ObjectMeta: metav1.ObjectMeta{
@@ -194,10 +199,10 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 			if err := p.Client.Status().Update(ctx, obj); err != nil {
 				return err
 			}
-			knownIDs[remote.TemplateID] = true
+			knownIDs[templateID] = true
 			knownNames[name] = true
 			adopted++
-			logger.Info("adopted sandbox template from openapi", "name", name, "templateID", remote.TemplateID)
+			logger.Info("adopted sandbox template from openapi", "name", name, "templateID", templateID)
 		}
 		if adopted > 0 {
 			logger.Info("adopted sandbox templates from openapi", "count", adopted)
