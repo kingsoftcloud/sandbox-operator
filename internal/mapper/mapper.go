@@ -116,10 +116,10 @@ func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime R
 		req.AccessKey = full.AccessKey
 		req.SecretAccessKey = full.SecretAccessKey
 	}
-	if !reflect.DeepEqual(in.Spec.Observability, old.Spec.Observability) {
+	if !reflect.DeepEqual(templateObservabilitySpec(inTpl), templateObservabilitySpec(oldTpl)) {
 		req.KlogConfig = full.KlogConfig
 	}
-	if !reflect.DeepEqual(in.Spec.Pool, old.Spec.Pool) {
+	if !reflect.DeepEqual(templatePoolSpec(inTpl), templatePoolSpec(oldTpl)) {
 		req.PreheatConfig = full.PreheatConfig
 	}
 	return req
@@ -188,24 +188,21 @@ func ApplyTemplateSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi
 	obj.Spec.Access = displayAccess(remote.TemplateCategory)
 	obj.Spec.Type = displayTemplateType(remote.TemplateType)
 	applyRuntimeSpecFromOpenAPI(obj, remote)
+	tpl := templateSpec(obj.Spec)
 	if remote.TargetPoolSize() > 0 {
-		obj.Spec.Pool = &sandboxv1.TemplatePoolSpec{TargetSize: remote.TargetPoolSize()}
-	} else {
-		obj.Spec.Pool = nil
+		tpl.Pool = &sandboxv1.TemplatePoolSpec{TargetSize: remote.TargetPoolSize()}
+	} else if tpl != nil {
+		tpl.Pool = nil
 	}
 }
 
 func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.Template) {
-	obj.Status.ObservedGeneration = obj.Generation
 	obj.Status.Phase = TemplatePhase(remote.Status)
-	obj.Status.RawStatus = remote.Status
 	obj.Status.CanDelete = remote.CanDelete
 	obj.Status.CreatedAt = metaTimeString(remote.CreatedAt)
 	obj.Status.UpdatedAt = metaTimeString(remote.UpdatedAt)
 	obj.Status.ExternalUpdatedAt = metaTimeString(remote.UpdatedAt)
-	if remote.KlogConfig != nil {
-		obj.Status.Klog = &sandboxv1.KlogStatus{ProjectName: remote.KlogConfig.ProjectName, PoolName: remote.KlogConfig.PoolName}
-	}
+	obj.Status.Klog = nil
 	obj.Status.Quota = &sandboxv1.QuotaStatus{
 		InstanceQuota:                remote.InstanceQuota,
 		RemainingInstanceQuota:       remote.RemainingInstanceQuota,
@@ -231,10 +228,12 @@ func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote opena
 }
 
 func ApplySandboxSpecFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
-	if remote.Name() != "" {
-		obj.Spec.Name = remote.Name()
-	} else if obj.Spec.Name == "" {
-		obj.Spec.Name = obj.Name
+	if obj.Spec.Name == "" {
+		if remote.Name() != "" {
+			obj.Spec.Name = remote.Name()
+		} else {
+			obj.Spec.Name = obj.Name
+		}
 	}
 	if obj.Spec.TemplateRef.ID == "" && remote.TemplateIdentifier() != "" {
 		obj.Spec.TemplateRef.ID = remote.TemplateIdentifier()
@@ -245,25 +244,77 @@ func ApplySandboxSpecFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox)
 }
 
 func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
-	obj.Status.ObservedGeneration = obj.Generation
 	obj.Status.ExternalUpdatedAt = metaTimeString(remote.EndTime)
-	obj.Status.Template = &sandboxv1.SandboxTemplateSummary{
-		Type:     displayTemplateType(remote.TemplateType),
-		Category: remote.TemplateCategory,
-	}
 	obj.Status.Phase = SandboxPhase(remote.Status)
-	obj.Status.RawStatus = remote.Status
 	obj.Status.TimeoutSeconds = remote.Timeout
 	obj.Status.CreateTime = metaTimeString(remote.CreateTime)
 	obj.Status.EndTime = metaTimeString(remote.EndTime)
-	obj.Status.Endpoint = remote.Endpoint
-	if remote.CustomConfiguration != nil {
-		obj.Status.CustomConfiguration = &sandboxv1.SandboxCustomConfiguration{
-			ImageURL: remote.CustomConfiguration.ImageURL,
-			Port:     remote.CustomConfiguration.Port,
-			Command:  remote.CustomConfiguration.Command,
-		}
+	obj.Status.Endpoint = firstNonEmpty(remote.Endpoint, remote.Domain)
+	if urls := sandboxURLsFromOpenAPIURL(remote.URLs); urls != nil {
+		obj.Status.URLs = urls
 	}
+	if accessURL := sandboxURLsFromOpenAPIURL(remote.AccessURL); accessURL != nil {
+		obj.Status.AccessURL = accessURL
+	}
+	obj.Status.SdnsURLs = copyStringMap(remote.SdnsURLs)
+	obj.Status.Env = sandboxEnvFromOpenAPI(remote.Envs)
+	obj.Status.Volumes = sandboxVolumesFromOpenAPI(remote)
+	obj.Status.CustomConfiguration = nil
+	if remote.CustomConfiguration != nil {
+		obj.Status.ImageURL = remote.CustomConfiguration.ImageURL
+		obj.Status.Port = remote.CustomConfiguration.Port
+		obj.Status.Command = remote.CustomConfiguration.Command
+	} else {
+		obj.Status.ImageURL = ""
+		obj.Status.Port = 0
+		obj.Status.Command = ""
+	}
+}
+
+func ApplySandboxAccessURLFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
+	if accessURL := sandboxURLsFromOpenAPIURL(remote.AccessURL); accessURL != nil {
+		obj.Status.AccessURL = accessURL
+	}
+}
+
+func sandboxEnvFromOpenAPI(in []openapi.Env) []sandboxv1.EnvVar {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]sandboxv1.EnvVar, 0, len(in))
+	for _, item := range in {
+		out = append(out, sandboxv1.EnvVar{Key: item.Key, Value: item.Value})
+	}
+	return out
+}
+
+func sandboxURLsFromOpenAPIURL(in *openapi.URLs) *sandboxv1.SandboxURLs {
+	if in == nil {
+		return nil
+	}
+	out := &sandboxv1.SandboxURLs{
+		CdpURL:      in.CdpURL,
+		NoVncURL:    in.NoVncURL,
+		CodeURL:     in.Code,
+		AppURL:      in.AppURL,
+		TerminalURL: in.TerminalURL,
+		VscodeURL:   in.VscodeURL,
+	}
+	if out.CdpURL == "" && out.NoVncURL == "" && out.CodeURL == "" && out.AppURL == "" && out.TerminalURL == "" && out.VscodeURL == "" {
+		return nil
+	}
+	return out
+}
+
+func copyStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func TemplatePhase(raw string) sandboxv1.Phase {
@@ -507,9 +558,23 @@ func templateSkillSpec(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.SkillConfi
 	return tpl.SkillConfig
 }
 
+func templatePoolSpec(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.TemplatePoolSpec {
+	if tpl == nil {
+		return nil
+	}
+	return tpl.Pool
+}
+
+func templateObservabilitySpec(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.ObservabilitySpec {
+	if tpl == nil {
+		return nil
+	}
+	return tpl.Observability
+}
+
 func templatePreheat(spec sandboxv1.SandboxTemplateSpec) *openapi.PreheatConfig {
-	if spec.Pool != nil {
-		return &openapi.PreheatConfig{PreheatEnable: spec.Pool.TargetSize > 0, PreheatNumber: spec.Pool.TargetSize}
+	if pool := templatePoolSpec(templateSpec(spec)); pool != nil {
+		return &openapi.PreheatConfig{PreheatEnable: pool.TargetSize > 0, PreheatNumber: pool.TargetSize}
 	}
 	return nil
 }
@@ -604,8 +669,8 @@ func templateMountUpdateToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec, kind strin
 }
 
 func templateKlogToOpenAPI(spec sandboxv1.SandboxTemplateSpec, cred *credentials.RuntimeCredential) *openapi.KlogConfig {
-	if spec.Observability != nil && spec.Observability.Logging != nil {
-		logging := spec.Observability.Logging
+	if observability := templateObservabilitySpec(templateSpec(spec)); observability != nil && observability.Logging != nil {
+		logging := observability.Logging
 		return &openapi.KlogConfig{Enabled: logging.Enabled}
 	}
 	return nil
@@ -682,7 +747,7 @@ func applyRuntimeSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.
 	}
 	tpl.Volumes = volumesFromOpenAPI(remote)
 	if remote.KlogConfig != nil {
-		obj.Spec.Observability = &sandboxv1.ObservabilitySpec{
+		tpl.Observability = &sandboxv1.ObservabilitySpec{
 			Logging: &sandboxv1.LoggingSpec{
 				Enabled:           remote.KlogConfig.Enabled,
 				ProjectName:       remote.KlogConfig.ProjectName,
@@ -690,7 +755,7 @@ func applyRuntimeSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.
 			},
 		}
 	} else {
-		obj.Spec.Observability = nil
+		tpl.Observability = nil
 	}
 }
 
@@ -745,9 +810,17 @@ func dataDisksFromOpenAPI(in []openapi.DataDisk) []sandboxv1.DataDiskSpec {
 }
 
 func volumesFromOpenAPI(remote openapi.Template) []sandboxv1.TemplateVolume {
+	return volumesFromMountConfigs(remote.KS3MountConfig, remote.KPFSMountConfig)
+}
+
+func sandboxVolumesFromOpenAPI(remote openapi.Sandbox) []sandboxv1.TemplateVolume {
+	return volumesFromMountConfigs(remote.KS3MountConfig, remote.KPFSMountConfig)
+}
+
+func volumesFromMountConfigs(ks3Config, kpfsConfig *openapi.MountConfig) []sandboxv1.TemplateVolume {
 	var out []sandboxv1.TemplateVolume
-	if remote.KS3MountConfig != nil {
-		for i, point := range remote.KS3MountConfig.Points() {
+	if ks3Config != nil {
+		for i, point := range ks3Config.Points() {
 			out = append(out, sandboxv1.TemplateVolume{
 				Name:      volumeName("ks3", point.BucketName, i),
 				Type:      "KS3",
@@ -760,8 +833,8 @@ func volumesFromOpenAPI(remote openapi.Template) []sandboxv1.TemplateVolume {
 			})
 		}
 	}
-	if remote.KPFSMountConfig != nil {
-		for i, point := range remote.KPFSMountConfig.Points() {
+	if kpfsConfig != nil {
+		for i, point := range kpfsConfig.Points() {
 			out = append(out, sandboxv1.TemplateVolume{
 				Name:      volumeName("kpfs", point.FileSystemName, i),
 				Type:      "KPFS",
@@ -1007,6 +1080,15 @@ func envsToOpenAPI(in []sandboxv1.EnvVar) []openapi.Env {
 		out = append(out, openapi.Env{Key: item.Key, Value: item.Value})
 	}
 	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func envsFromMap(in map[string]string) []sandboxv1.EnvVar {

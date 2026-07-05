@@ -173,6 +173,7 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 		adopted := 0
 		for _, remote := range remotes {
 			templateID := remote.Identifier()
+			templateName := remote.TemplateName
 			if templateID == "" {
 				logger.Info("skip openapi template without id", "templateName", remote.TemplateName, "status", remote.Status)
 				continue
@@ -188,7 +189,10 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 				return err
 			}
 			remote = *detail
-			name := uniqueName(externalResourceName(remote.TemplateName, templateID), knownNames)
+			if remote.TemplateName == "" || remote.TemplateName == templateID {
+				remote.TemplateName = templateName
+			}
+			name := uniqueName(externalTemplateResourceName(remote.TemplateName, templateID), knownNames)
 			obj := &sandboxv1.SandboxTemplate{
 				TypeMeta: metav1.TypeMeta{APIVersion: sandboxv1.GroupVersion.String(), Kind: "SandboxTemplate"},
 				ObjectMeta: metav1.ObjectMeta{
@@ -238,6 +242,7 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 		return err
 	}
 	knownIDs := map[string]bool{}
+	knownByID := map[string]*sandboxv1.Sandbox{}
 	knownNames := map[string]bool{}
 
 	for i := range local.Items {
@@ -249,6 +254,7 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 			continue
 		}
 		knownIDs[sandboxID] = true
+		knownByID[sandboxID] = obj
 		remote, err := p.OpenAPI.GetSandbox(ctx, cred, sandboxID)
 		if err != nil {
 			if openapi.IsNotFound(err) {
@@ -259,6 +265,8 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 			}
 			return err
 		}
+		logger.V(1).Info("fetched sandbox from openapi",
+			append([]any{"name", obj.Name, "sandboxID", sandboxID}, sandboxOpenAPIDebugValues(*remote)...)...)
 		specBefore := cloneForCompare(obj.Spec)
 		mapper.ApplySandboxSpecFromOpenAPI(obj, *remote)
 		if hasChanged(specBefore, obj.Spec) {
@@ -283,9 +291,23 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 		adopted := 0
 		for _, remote := range remotes {
 			sandboxID := remote.Identifier()
-			if sandboxID == "" || knownIDs[sandboxID] {
+			if sandboxID == "" {
 				continue
 			}
+			if knownIDs[sandboxID] {
+				if obj := knownByID[sandboxID]; obj != nil {
+					statusBefore := cloneForCompare(obj.Status)
+					mapper.ApplySandboxAccessURLFromOpenAPI(obj, remote)
+					if hasChanged(statusBefore, obj.Status) {
+						if err := p.Client.Status().Update(ctx, obj); err != nil {
+							return ignoreConflict(err)
+						}
+					}
+				}
+				continue
+			}
+			logger.V(1).Info("listed sandbox from openapi",
+				append([]any{"sandboxID", sandboxID}, sandboxOpenAPIDebugValues(remote)...)...)
 			name := uniqueName(externalResourceName(remote.Name(), sandboxID), knownNames)
 			obj := &sandboxv1.Sandbox{
 				TypeMeta: metav1.TypeMeta{APIVersion: sandboxv1.GroupVersion.String(), Kind: "Sandbox"},
@@ -440,6 +462,13 @@ func uniqueName(base string, used map[string]bool) string {
 func externalResourceName(preferredName, id string) string {
 	if isValidKubernetesName(preferredName) {
 		return preferredName
+	}
+	return sanitizeName(id, "unknown")
+}
+
+func externalTemplateResourceName(templateName, id string) string {
+	if templateName != "" {
+		return sanitizeName(templateName, id)
 	}
 	return sanitizeName(id, "unknown")
 }

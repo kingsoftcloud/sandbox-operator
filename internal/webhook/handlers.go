@@ -198,6 +198,9 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 		if err := h.validateSandboxName(ctx, &obj, old.Name); err != nil {
 			return admission.Denied(err.Error())
 		}
+		if !sandboxSpecOnlyNameOrTimeoutChanged(old.Spec, obj.Spec) {
+			return admission.Denied("only spec.name and spec.timeoutSeconds can be updated on Sandbox")
+		}
 		if old.Spec.TimeoutSeconds != obj.Spec.TimeoutSeconds {
 			if annotations.Get(obj.Annotations, annotations.SandboxID) == "" {
 				return admission.Denied("metadata.annotations[sandbox.kce.ksyun.com/sandbox-id] is empty; wait for OpenAPI sync before updating timeout")
@@ -395,10 +398,12 @@ func (h *Handler) templateCredentials(ctx context.Context, obj *sandboxv1.Sandbo
 			}
 		}
 	}
-	if obj.Spec.Observability != nil && obj.Spec.Observability.Logging != nil {
-		runtimeCreds.Klog, err = h.Credentials.GetRuntime(ctx, obj.Namespace, obj.Spec.Observability.Logging.CredentialRef)
-		if err != nil {
-			return nil, mapper.RuntimeCredentials{}, err
+	if obj.Spec.Template != nil {
+		if observability := obj.Spec.Template.Spec.Observability; observability != nil && observability.Logging != nil {
+			runtimeCreds.Klog, err = h.Credentials.GetRuntime(ctx, obj.Namespace, observability.Logging.CredentialRef)
+			if err != nil {
+				return nil, mapper.RuntimeCredentials{}, err
+			}
 		}
 	}
 	return cred, runtimeCreds, nil
@@ -521,6 +526,12 @@ func (h *Handler) validateSandboxName(ctx context.Context, obj *sandboxv1.Sandbo
 		effectiveName = obj.Name
 	}
 	return h.ensureSandboxNameAvailable(ctx, obj.Namespace, effectiveName, currentObjectName)
+}
+
+func sandboxSpecOnlyNameOrTimeoutChanged(oldSpec, newSpec sandboxv1.SandboxSpec) bool {
+	oldSpec.Name = newSpec.Name
+	oldSpec.TimeoutSeconds = newSpec.TimeoutSeconds
+	return reflect.DeepEqual(oldSpec, newSpec)
 }
 
 func (h *Handler) ensureSandboxNameAvailable(ctx context.Context, namespace, sandboxName, currentObjectName string) error {

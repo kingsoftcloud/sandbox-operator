@@ -103,12 +103,16 @@ type Sandbox struct {
 	CreateTime          string               `json:"CreateTime,omitempty"`
 	EndTime             string               `json:"EndTime,omitempty"`
 	Endpoint            string               `json:"Endpoint,omitempty"`
+	Domain              string               `json:"Domain,omitempty"`
 	AccessURL           *URLs                `json:"AccessUrl,omitempty"`
+	URLs                *URLs                `json:"Urls,omitempty"`
+	SdnsURLs            map[string]string    `json:"SdnsUrls,omitempty"`
 	ContainerID         string               `json:"ContainerId,omitempty"`
 	CustomConfiguration *CustomConfiguration `json:"CustomConfiguration,omitempty"`
 	Envs                []Env                `json:"Envs,omitempty"`
 	KS3MountConfig      *MountConfig         `json:"Ks3MountConfig,omitempty"`
 	KPFSMountConfig     *MountConfig         `json:"KpfsMountConfig,omitempty"`
+	KlogConfig          *KlogConfig          `json:"KlogConfig,omitempty"`
 	EnvdAccessToken     string               `json:"Token,omitempty"`
 }
 

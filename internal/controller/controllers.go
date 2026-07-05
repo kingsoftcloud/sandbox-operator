@@ -269,6 +269,8 @@ func (r *SandboxReconciler) bindAndSyncSandbox(ctx context.Context, obj *sandbox
 		}
 		return err
 	}
+	log.FromContext(ctx).V(1).Info("fetched sandbox from openapi",
+		append([]any{"sandboxID", sandboxID}, sandboxOpenAPIDebugValues(*remote)...)...)
 	specBefore := cloneForCompare(obj.Spec)
 	mapper.ApplySandboxSpecFromOpenAPI(obj, *remote)
 	if hasChanged(specBefore, obj.Spec) {

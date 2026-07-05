@@ -112,6 +112,158 @@ func TestTemplateUpdateRequestFromDiffSendsDiskAsKecConfig(t *testing.T) {
 	}
 }
 
+func TestTemplatePoolAndObservabilityLiveUnderRuntimeSpec(t *testing.T) {
+	obj := templateWithKS3("description", "/mnt/data")
+	obj.Spec.Template.Spec.Pool = &sandboxv1.TemplatePoolSpec{TargetSize: 2}
+	obj.Spec.Template.Spec.Observability = &sandboxv1.ObservabilitySpec{
+		Logging: &sandboxv1.LoggingSpec{Enabled: true},
+	}
+
+	createReq := TemplateCreateRequest(obj, RuntimeCredentials{})
+	if createReq.PreheatConfig == nil || !createReq.PreheatConfig.PreheatEnable || createReq.PreheatConfig.PreheatNumber != 2 {
+		t.Fatalf("nested pool was not mapped to preheat config: %#v", createReq.PreheatConfig)
+	}
+	if createReq.KlogConfig == nil || !createReq.KlogConfig.Enabled {
+		t.Fatalf("nested observability was not mapped to klog config: %#v", createReq.KlogConfig)
+	}
+
+	var synced sandboxv1.SandboxTemplate
+	ApplyTemplateSpecFromOpenAPI(&synced, openapi.Template{
+		TemplateType:     "custom",
+		TemplateCategory: "Private",
+		PreheatConfig:    &openapi.PreheatConfig{PreheatEnable: true, PreheatNumber: 3},
+		KlogConfig:       &openapi.KlogConfig{Enabled: true, ProjectName: "project", PoolName: "pool"},
+	})
+	if synced.Spec.Template == nil || synced.Spec.Template.Spec.Pool == nil || synced.Spec.Template.Spec.Pool.TargetSize != 3 {
+		t.Fatalf("remote preheat was not written under template.spec.pool: %#v", synced.Spec.Template)
+	}
+	logging := synced.Spec.Template.Spec.Observability.Logging
+	if logging == nil || !logging.Enabled || logging.ProjectName != "project" || logging.ContainerPoolName != "pool" {
+		t.Fatalf("remote klog was not written under template.spec.observability: %#v", synced.Spec.Template.Spec.Observability)
+	}
+
+	synced.Status.Klog = &sandboxv1.KlogStatus{ProjectName: "old", PoolName: "old"}
+	ApplyTemplateStatusFromOpenAPI(&synced, openapi.Template{Status: "Ready"})
+	if synced.Status.Klog != nil {
+		t.Fatalf("status.klog should be cleared during sync: %#v", synced.Status.Klog)
+	}
+}
+
+func TestApplySandboxSpecPreservesLocalSandboxName(t *testing.T) {
+	obj := &sandboxv1.Sandbox{}
+	ApplySandboxSpecFromOpenAPI(obj, openapi.Sandbox{SandboxName: "remote-name"})
+	if obj.Spec.Name != "remote-name" {
+		t.Fatalf("empty local sandbox name should use remote name, got %q", obj.Spec.Name)
+	}
+
+	obj.Spec.Name = "user-name"
+	ApplySandboxSpecFromOpenAPI(obj, openapi.Sandbox{SandboxName: "remote-name-2"})
+	if obj.Spec.Name != "user-name" {
+		t.Fatalf("local sandbox name should be preserved, got %q", obj.Spec.Name)
+	}
+}
+
+func TestApplySandboxStatusIncludesRuntimeDetails(t *testing.T) {
+	obj := &sandboxv1.Sandbox{
+		Status: sandboxv1.SandboxStatus{
+			CustomConfiguration: &sandboxv1.SandboxCustomConfiguration{ImageURL: "old"},
+		},
+	}
+	ApplySandboxStatusFromOpenAPI(obj, openapi.Sandbox{
+		Domain:   "https://domain.example.com",
+		Endpoint: "https://endpoint.example.com",
+		URLs: &openapi.URLs{
+			Code:        "https://code.example.com",
+			TerminalURL: "https://terminal.example.com",
+		},
+		AccessURL: &openapi.URLs{
+			Code: "https://access-url.example.com",
+		},
+		SdnsURLs: map[string]string{"app": "https://sdns.example.com"},
+		CustomConfiguration: &openapi.CustomConfiguration{
+			ImageURL: "hub.kce.ksyun.com/sandbox/aio:v1",
+			Port:     8000,
+			Command:  "/entrypoint.sh",
+		},
+		Envs: []openapi.Env{{Key: "APP_ENV", Value: "prod"}},
+		KS3MountConfig: &openapi.MountConfig{
+			EnableKS3: true,
+			MountPoints: []openapi.MountPoint{{
+				BucketName:     "bucket-a",
+				RemotePath:     "/datasets",
+				LocalMountPath: "/mnt/ks3",
+				ReadOnly:       true,
+			}},
+		},
+		KPFSMountConfig: &openapi.MountConfig{
+			EnableKPFS: true,
+			KPFSMounts: []openapi.MountPoint{{
+				FileSystemName: "fs-a",
+				RemotePath:     "/",
+				LocalMountPath: "/mnt/kpfs",
+				ReadOnly:       false,
+			}},
+		},
+	})
+
+	if obj.Status.Endpoint != "https://endpoint.example.com" {
+		t.Fatalf("sandbox endpoint mismatch: %q", obj.Status.Endpoint)
+	}
+	if obj.Status.URLs == nil || obj.Status.URLs.CodeURL != "https://code.example.com" || obj.Status.URLs.TerminalURL != "https://terminal.example.com" {
+		t.Fatalf("sandbox urls were not synced to status: %#v", obj.Status.URLs)
+	}
+	if obj.Status.AccessURL == nil || obj.Status.AccessURL.CodeURL != "https://access-url.example.com" {
+		t.Fatalf("sandbox accessUrl was not synced to status: %#v", obj.Status.AccessURL)
+	}
+	if obj.Status.SdnsURLs["app"] != "https://sdns.example.com" {
+		t.Fatalf("sandbox sdnsUrls were not synced to status: %#v", obj.Status.SdnsURLs)
+	}
+	if obj.Status.ImageURL != "hub.kce.ksyun.com/sandbox/aio:v1" || obj.Status.Port != 8000 || obj.Status.Command != "/entrypoint.sh" {
+		t.Fatalf("sandbox runtime config was not split into status fields: %#v", obj.Status)
+	}
+	if obj.Status.CustomConfiguration != nil {
+		t.Fatalf("status.customConfiguration should be cleared during sync: %#v", obj.Status.CustomConfiguration)
+	}
+	if len(obj.Status.Env) != 1 || obj.Status.Env[0].Key != "APP_ENV" || obj.Status.Env[0].Value != "prod" {
+		t.Fatalf("sandbox env was not synced to status: %#v", obj.Status.Env)
+	}
+	if len(obj.Status.Volumes) != 2 {
+		t.Fatalf("sandbox volumes were not synced to status: %#v", obj.Status.Volumes)
+	}
+	if obj.Status.Volumes[0].KS3 == nil || obj.Status.Volumes[0].KS3.Bucket != "bucket-a" {
+		t.Fatalf("sandbox KS3 volume mismatch: %#v", obj.Status.Volumes[0])
+	}
+	if obj.Status.Volumes[1].KPFS == nil || obj.Status.Volumes[1].KPFS.FileSystem != "fs-a" {
+		t.Fatalf("sandbox KPFS volume mismatch: %#v", obj.Status.Volumes[1])
+	}
+}
+
+func TestApplySandboxStatusPreservesAccessURLWhenDetailOmitsIt(t *testing.T) {
+	obj := &sandboxv1.Sandbox{
+		Status: sandboxv1.SandboxStatus{
+			AccessURL: &sandboxv1.SandboxURLs{CodeURL: "https://access-url.example.com"},
+		},
+	}
+
+	ApplySandboxStatusFromOpenAPI(obj, openapi.Sandbox{Status: "RUNNING"})
+
+	if obj.Status.AccessURL == nil || obj.Status.AccessURL.CodeURL != "https://access-url.example.com" {
+		t.Fatalf("sandbox accessUrl should be preserved when openapi detail omits it: %#v", obj.Status.AccessURL)
+	}
+}
+
+func TestApplySandboxAccessURLFromOpenAPI(t *testing.T) {
+	obj := &sandboxv1.Sandbox{}
+
+	ApplySandboxAccessURLFromOpenAPI(obj, openapi.Sandbox{
+		AccessURL: &openapi.URLs{Code: "https://access-url.example.com"},
+	})
+
+	if obj.Status.AccessURL == nil || obj.Status.AccessURL.CodeURL != "https://access-url.example.com" {
+		t.Fatalf("sandbox accessUrl was not applied from list response: %#v", obj.Status.AccessURL)
+	}
+}
+
 func templateWithKS3(description, mountPath string) *sandboxv1.SandboxTemplate {
 	memory := resource.MustParse("4Gi")
 	return &sandboxv1.SandboxTemplate{

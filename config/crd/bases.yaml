@@ -25,13 +25,16 @@ spec:
           jsonPath: .spec.access
         - name: TemplateID
           type: string
-          jsonPath: ".metadata.annotations['sandbox\\.kce\\.ksyun\\.com/template-id']"
+          jsonPath: ".metadata.annotations.sandbox\\.kce\\.ksyun\\.com/template-id"
         - name: Phase
           type: string
           jsonPath: .status.phase
         - name: Target
           type: integer
-          jsonPath: .spec.pool.targetSize
+          jsonPath: .spec.template.spec.pool.targetSize
+        - name: Preheated
+          type: integer
+          jsonPath: .status.preheat.preheatedInstanceNumber
         - name: Updated
           type: date
           jsonPath: .status.externalUpdatedAt
@@ -51,7 +54,7 @@ spec:
                   type: string
                 type:
                   type: string
-                  enum: ["Custom", "CodeInterpreter", "Browser", "AllInOne", "custom", "code", "browser", "AIO"]
+                  enum: ["Custom", "CodeInterpreter", "Browser", "AllInOne", "custom", "code", "browser", "AIO", "CUSTOM", "CODE", "BROWSER"]
                 access:
                   type: string
                   enum: ["Private", "Public", "private", "public"]
@@ -195,37 +198,37 @@ spec:
                                 type: boolean
                               path:
                                 type: string
-                pool:
-                  type: object
-                  properties:
-                    targetSize:
-                      type: integer
-                      minimum: 0
-                observability:
-                  type: object
-                  properties:
-                    logging:
-                      type: object
-                      properties:
-                        enabled:
-                          type: boolean
-                        projectName:
-                          type: string
-                        endpoint:
-                          type: string
-                        containerPoolName:
-                          type: string
-                        hostPoolName:
-                          type: string
-                        rules:
-                          type: array
-                          items:
-                            type: string
-                        credentialRef:
+                        pool:
                           type: object
                           properties:
-                            name:
-                              type: string
+                            targetSize:
+                              type: integer
+                              minimum: 0
+                        observability:
+                          type: object
+                          properties:
+                            logging:
+                              type: object
+                              properties:
+                                enabled:
+                                  type: boolean
+                                projectName:
+                                  type: string
+                                endpoint:
+                                  type: string
+                                containerPoolName:
+                                  type: string
+                                hostPoolName:
+                                  type: string
+                                rules:
+                                  type: array
+                                  items:
+                                    type: string
+                                credentialRef:
+                                  type: object
+                                  properties:
+                                    name:
+                                      type: string
               x-kubernetes-preserve-unknown-fields: true
             status:
               type: object
@@ -250,21 +253,21 @@ spec:
       subresources:
         status: {}
       additionalPrinterColumns:
-        - name: SandboxName
-          type: string
-          jsonPath: .spec.name
         - name: SandboxID
           type: string
-          jsonPath: ".metadata.annotations['sandbox\\.kce\\.ksyun\\.com/sandbox-id']"
+          jsonPath: ".metadata.annotations.sandbox\\.kce\\.ksyun\\.com/sandbox-id"
+        - name: TemplateID
+          type: string
+          jsonPath: ".metadata.annotations.sandbox\\.kce\\.ksyun\\.com/template-id"
         - name: Phase
           type: string
           jsonPath: .status.phase
         - name: Timeout
           type: integer
-          jsonPath: .spec.timeoutSeconds
-        - name: Updated
-          type: date
-          jsonPath: .status.externalUpdatedAt
+          jsonPath: .status.timeoutSeconds
+        - name: EndTime
+          type: string
+          jsonPath: .status.endTime
       schema:
         openAPIV3Schema:
           type: object

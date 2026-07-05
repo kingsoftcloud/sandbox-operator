@@ -69,6 +69,8 @@ type RuntimeTemplateSpec struct {
 	NetworkConfig *OpenAPINetworkConfig `json:"networkConfig,omitempty"`
 	SkillConfig   *SkillConfig          `json:"skillConfig,omitempty"`
 	DataDisks     []DataDiskSpec        `json:"dataDisks,omitempty"`
+	Pool          *TemplatePoolSpec     `json:"pool,omitempty"`
+	Observability *ObservabilitySpec    `json:"observability,omitempty"`
 }
 
 type TemplateImageSpec struct {

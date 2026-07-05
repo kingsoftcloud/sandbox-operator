@@ -5,10 +5,12 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=stpl
-// +kubebuilder:printcolumn:name="TemplateID",type=string,JSONPath=".metadata.annotations['sandbox\\.kce\\.ksyun\\.com/template-id']"
+// +kubebuilder:printcolumn:name="TemplateID",type=string,JSONPath=".metadata.annotations.sandbox\\.kce\\.ksyun\\.com/template-id"
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Access",type=string,JSONPath=".spec.access"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Target",type=integer,JSONPath=".spec.template.spec.pool.targetSize"
+// +kubebuilder:printcolumn:name="Preheated",type=integer,JSONPath=".status.preheat.preheatedInstanceNumber"
 // +kubebuilder:printcolumn:name="Updated",type=date,JSONPath=".status.externalUpdatedAt"
 type SandboxTemplate struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -24,25 +26,23 @@ type SandboxTemplateSpec struct {
 	Type                 string                      `json:"type,omitempty"`
 	Access               string                      `json:"access,omitempty"`
 	Template             *RuntimeTemplate            `json:"template,omitempty"`
-	Pool                 *TemplatePoolSpec           `json:"pool,omitempty"`
-	Observability        *ObservabilitySpec          `json:"observability,omitempty"`
 }
 
 type SandboxTemplateStatus struct {
-	ObservedGeneration int64               `json:"observedGeneration,omitempty"`
-	Phase              Phase               `json:"phase,omitempty"`
-	RawStatus          string              `json:"rawStatus,omitempty"`
-	ExternalUpdatedAt  *metav1.Time        `json:"externalUpdatedAt,omitempty"`
-	CanDelete          bool                `json:"canDelete,omitempty"`
-	CredentialDrift    *CredentialDriftSet `json:"credentialDrift,omitempty"`
-	Klog               *KlogStatus         `json:"klog,omitempty"`
-	Quota              *QuotaStatus        `json:"quota,omitempty"`
-	Preheat            *PreheatStatus      `json:"preheat,omitempty"`
-	CreatedAt          *metav1.Time        `json:"createdAt,omitempty"`
-	UpdatedAt          *metav1.Time        `json:"updatedAt,omitempty"`
-	Conditions         []metav1.Condition  `json:"conditions,omitempty"`
+	Phase             Phase               `json:"phase,omitempty"`
+	ExternalUpdatedAt *metav1.Time        `json:"externalUpdatedAt,omitempty"`
+	CanDelete         bool                `json:"canDelete,omitempty"`
+	CredentialDrift   *CredentialDriftSet `json:"credentialDrift,omitempty"`
+	Klog              *KlogStatus         `json:"klog,omitempty"`
+	Quota             *QuotaStatus        `json:"quota,omitempty"`
+	Preheat           *PreheatStatus      `json:"preheat,omitempty"`
+	CreatedAt         *metav1.Time        `json:"createdAt,omitempty"`
+	UpdatedAt         *metav1.Time        `json:"updatedAt,omitempty"`
+	Conditions        []metav1.Condition  `json:"conditions,omitempty"`
 }
 
+// KlogStatus is kept only to clear status.klog from existing CRs during upgrade.
+// New sync results write klog settings under spec.template.spec.observability.
 type KlogStatus struct {
 	ProjectName string `json:"projectName,omitempty"`
 	PoolName    string `json:"poolName,omitempty"`
@@ -57,7 +57,7 @@ type QuotaStatus struct {
 type PreheatStatus struct {
 	Enabled                 bool `json:"enabled,omitempty"`
 	Number                  int  `json:"number,omitempty"`
-	PreheatedInstanceNumber int  `json:"preheatedInstanceNumber,omitempty"`
+	PreheatedInstanceNumber int  `json:"preheatedInstanceNumber"`
 }
 
 // +kubebuilder:object:root=true

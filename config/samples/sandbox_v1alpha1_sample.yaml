@@ -82,19 +82,19 @@ spec:
           sizeMB: 51200
           deleteWithInstance: true
           path: /root/tmp
-  pool:
-    targetSize: 1
-  observability:
-    logging:
-      enabled: true
-      projectName: sandbox-log
-      endpoint: "https://klog-cn-beijing.ksyun.com"
-      containerPoolName: sandbox-container
-      hostPoolName: sandbox-host
-      rules:
-        - "/home/user/*.log"
-      credentialRef:
-        name: klog-credential
+      pool:
+        targetSize: 1
+      observability:
+        logging:
+          enabled: true
+          projectName: sandbox-log
+          endpoint: "https://klog-cn-beijing.ksyun.com"
+          containerPoolName: sandbox-container
+          hostPoolName: sandbox-host
+          rules:
+            - "/home/user/*.log"
+          credentialRef:
+            name: klog-credential
 ---
 apiVersion: sandbox.kce.ksyun.com/v1alpha1
 kind: Sandbox
