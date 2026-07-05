@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"strconv"
+	"strings"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -15,34 +15,47 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	sandboxv1 "sandbox-operator/api/v1alpha1"
+	"sandbox-operator/internal/annotations"
 	"sandbox-operator/internal/credentials"
 	"sandbox-operator/internal/mapper"
 	"sandbox-operator/internal/openapi"
-	"sandbox-operator/internal/operation"
 )
 
 const DefaultOperatorUsername = "system:serviceaccount:sandbox-operator-system:sandbox-operator"
 
+type Mode string
+
+const (
+	ModeValidate Mode = "validate"
+	ModeMutate   Mode = "mutate"
+)
+
 type Handler struct {
 	Client           client.Client
 	Credentials      *credentials.Manager
-	Operations       *operation.Recorder
 	OpenAPI          openapi.Interface
 	Decoder          admission.Decoder
 	OperatorUsername string
 	Kind             string
+	Mode             Mode
 }
 
-func NewHandler(c client.Client, scheme *runtime.Scheme, creds *credentials.Manager, ops *operation.Recorder, api openapi.Interface, kind string) *Handler {
+func NewHandler(c client.Client, scheme *runtime.Scheme, creds *credentials.Manager, api openapi.Interface, kind string) *Handler {
 	return &Handler{
 		Client:           c,
 		Credentials:      creds,
-		Operations:       ops,
 		OpenAPI:          api,
 		Decoder:          admission.NewDecoder(scheme),
 		OperatorUsername: DefaultOperatorUsername,
 		Kind:             kind,
+		Mode:             ModeValidate,
 	}
+}
+
+func NewMutatingHandler(c client.Client, scheme *runtime.Scheme, creds *credentials.Manager, api openapi.Interface, kind string) *Handler {
+	h := NewHandler(c, scheme, creds, api, kind)
+	h.Mode = ModeMutate
+	return h
 }
 
 func (h *Handler) Handle(ctx context.Context, req admission.Request) admission.Response {
@@ -51,6 +64,9 @@ func (h *Handler) Handle(ctx context.Context, req admission.Request) admission.R
 	}
 	if req.DryRun != nil && *req.DryRun {
 		return admission.Allowed("dry run")
+	}
+	if h.Mode == ModeMutate {
+		return h.handleMutating(ctx, req)
 	}
 
 	switch h.Kind {
@@ -73,6 +89,22 @@ func (h *Handler) isOperator(req admission.Request) bool {
 	return req.UserInfo.Username == username
 }
 
+func (h *Handler) handleMutating(ctx context.Context, req admission.Request) admission.Response {
+	if req.Operation != admissionv1.Create {
+		return admission.Allowed("mutation ignored")
+	}
+	switch h.Kind {
+	case "SandboxTemplate":
+		return h.mutateTemplateCreate(ctx, req)
+	case "Sandbox":
+		return h.mutateSandboxCreate(ctx, req)
+	case "SandboxClaim":
+		return h.mutateClaimCreate(ctx, req)
+	default:
+		return admission.Errored(http.StatusBadRequest, fmt.Errorf("unsupported webhook kind %s", h.Kind))
+	}
+}
+
 func (h *Handler) handleTemplate(ctx context.Context, req admission.Request) admission.Response {
 	switch req.Operation {
 	case admissionv1.Create:
@@ -83,25 +115,7 @@ func (h *Handler) handleTemplate(ctx context.Context, req admission.Request) adm
 		if err := h.validateTemplate(&obj); err != nil {
 			return admission.Denied(err.Error())
 		}
-		cred, runtimeCreds, err := h.templateCredentials(ctx, &obj)
-		if err != nil {
-			return admission.Denied(err.Error())
-		}
-		created, err := h.OpenAPI.CreateTemplate(ctx, mapper.OpenAPICredential(cred), mapper.TemplateCreateRequest(&obj, runtimeCreds))
-		if err != nil {
-			return admission.Denied(err.Error())
-		}
-		if h.Operations != nil {
-			_ = h.Operations.Upsert(ctx, operation.Record{
-				Namespace:  obj.Namespace,
-				Kind:       "SandboxTemplate",
-				Name:       obj.Name,
-				Generation: strconv.FormatInt(obj.Generation, 10),
-				Action:     "Create",
-				TemplateID: created.TemplateID,
-			})
-		}
-		return admission.Allowed("template created in openapi")
+		return admission.Allowed("template create validated")
 	case admissionv1.Update:
 		var obj sandboxv1.SandboxTemplate
 		var old sandboxv1.SandboxTemplate
@@ -110,6 +124,9 @@ func (h *Handler) handleTemplate(ctx context.Context, req admission.Request) adm
 		}
 		if err := h.decodeOld(req, &old); err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
+		}
+		if err := h.validateReservedAnnotationsUnchanged(&old, &obj); err != nil {
+			return admission.Denied(err.Error())
 		}
 		if err := h.validateTemplate(&obj); err != nil {
 			return admission.Denied(err.Error())
@@ -120,14 +137,31 @@ func (h *Handler) handleTemplate(ctx context.Context, req admission.Request) adm
 		if reflect.DeepEqual(old.Spec, obj.Spec) {
 			return admission.Allowed("template spec unchanged")
 		}
-		if obj.Status.TemplateID == "" {
-			return admission.Denied("status.templateID is empty; wait for OpenAPI sync before updating")
+		templateID := annotations.Get(obj.Annotations, annotations.TemplateID)
+		if templateID == "" {
+			return admission.Denied("metadata.annotations[sandbox.kce.ksyun.com/template-id] is empty; wait for OpenAPI sync before updating")
 		}
 		cred, runtimeCreds, err := h.templateCredentials(ctx, &obj)
 		if err != nil {
 			return admission.Denied(err.Error())
 		}
-		if err := h.OpenAPI.UpdateTemplate(ctx, mapper.OpenAPICredential(cred), mapper.TemplateUpdateRequest(&obj, runtimeCreds)); err != nil {
+		updateReq := mapper.TemplateUpdateRequestFromDiff(&obj, &old, runtimeCreds)
+		if updateReq.KecConfig != nil && updateReq.KecConfig.Enabled {
+			remote, err := h.OpenAPI.GetTemplate(ctx, mapper.OpenAPICredential(cred), templateID)
+			if err != nil {
+				return admission.Denied(err.Error())
+			}
+			if err := mapper.CompleteTemplateUpdateRequestFromRemote(&updateReq, *remote); err != nil {
+				return admission.Denied(err.Error())
+			}
+		}
+		if mapper.TemplateRequestNeedsStorageCredential(updateReq) && (updateReq.AccessKey == "" || updateReq.SecretAccessKey == "") {
+			return admission.Denied("updating KS3/KPFS mount config requires a credentialRef that points to a Secret with accessKey and secretAccessKey")
+		}
+		if err := h.validateTemplateMountCredentialRefs(&obj, updateReq); err != nil {
+			return admission.Denied(err.Error())
+		}
+		if err := h.OpenAPI.UpdateTemplate(ctx, mapper.OpenAPICredential(cred), updateReq); err != nil {
 			return admission.Denied(err.Error())
 		}
 		return admission.Allowed("template updated in openapi")
@@ -148,32 +182,7 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 		if err := h.validateSandboxName(ctx, &obj, ""); err != nil {
 			return admission.Denied(err.Error())
 		}
-		templateID, err := h.resolveTemplateID(ctx, &obj)
-		if err != nil {
-			return admission.Denied(err.Error())
-		}
-		cred, runtimeCreds, err := h.sandboxCredentials(ctx, &obj)
-		if err != nil {
-			return admission.Denied(err.Error())
-		}
-		started, err := h.OpenAPI.StartSandbox(ctx, mapper.OpenAPICredential(cred), mapper.SandboxStartRequest(&obj, templateID, runtimeCreds))
-		if err != nil {
-			return admission.Denied(err.Error())
-		}
-		if h.Operations != nil {
-			_ = h.Operations.Upsert(ctx, operation.Record{
-				Namespace:  obj.Namespace,
-				Kind:       "Sandbox",
-				Name:       obj.Name,
-				Generation: strconv.FormatInt(obj.Generation, 10),
-				Action:     "Create",
-				TemplateID: started.TemplateID,
-				SandboxID:  started.SandboxID,
-				Endpoint:   started.Endpoint,
-				Token:      started.Token,
-			})
-		}
-		return admission.Allowed("sandbox started in openapi")
+		return admission.Allowed("sandbox create validated")
 	case admissionv1.Update:
 		var obj sandboxv1.Sandbox
 		var old sandboxv1.Sandbox
@@ -183,10 +192,26 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 		if err := h.decodeOld(req, &old); err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
 		}
+		if err := h.validateReservedAnnotationsUnchanged(&old, &obj); err != nil {
+			return admission.Denied(err.Error())
+		}
 		if err := h.validateSandboxName(ctx, &obj, old.Name); err != nil {
 			return admission.Denied(err.Error())
 		}
-		return admission.Allowed("sandbox update accepted; OpenAPI has no sandbox update action")
+		if old.Spec.TimeoutSeconds != obj.Spec.TimeoutSeconds {
+			if annotations.Get(obj.Annotations, annotations.SandboxID) == "" {
+				return admission.Denied("metadata.annotations[sandbox.kce.ksyun.com/sandbox-id] is empty; wait for OpenAPI sync before updating timeout")
+			}
+			cred, _, err := h.sandboxCredentials(ctx, &obj)
+			if err != nil {
+				return admission.Denied(err.Error())
+			}
+			if err := h.OpenAPI.UpdateSandbox(ctx, mapper.OpenAPICredential(cred), mapper.SandboxUpdateRequest(&obj)); err != nil {
+				return admission.Denied(err.Error())
+			}
+			return admission.Allowed("sandbox timeout updated in openapi")
+		}
+		return admission.Allowed("sandbox update accepted")
 	case admissionv1.Delete:
 		return admission.Allowed("sandbox deletion handled by finalizer")
 	default:
@@ -195,12 +220,106 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 }
 
 func (h *Handler) handleClaim(ctx context.Context, req admission.Request) admission.Response {
+	if req.Operation == admissionv1.Update {
+		var obj sandboxv1.SandboxClaim
+		var old sandboxv1.SandboxClaim
+		if err := h.Decoder.Decode(req, &obj); err != nil {
+			return admission.Errored(http.StatusBadRequest, err)
+		}
+		if err := h.decodeOld(req, &old); err != nil {
+			return admission.Errored(http.StatusBadRequest, err)
+		}
+		if err := h.validateReservedAnnotationsUnchanged(&old, &obj); err != nil {
+			return admission.Denied(err.Error())
+		}
+		return admission.Allowed("claim update accepted")
+	}
 	if req.Operation != admissionv1.Create {
 		return admission.Allowed("claim update/delete deferred to controller")
 	}
 	var obj sandboxv1.SandboxClaim
 	if err := h.Decoder.Decode(req, &obj); err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
+	}
+	if obj.Spec.Replicas < 1 {
+		return admission.Denied("spec.replicas must be greater than zero")
+	}
+	if _, err := h.resolveClaimTemplateID(ctx, &obj); err != nil {
+		return admission.Denied(err.Error())
+	}
+	for i := 0; i < obj.Spec.Replicas; i++ {
+		name := fmt.Sprintf("%s-%d", obj.Name, i)
+		if err := h.ensureSandboxNameAvailable(ctx, obj.Namespace, name, ""); err != nil {
+			return admission.Denied(err.Error())
+		}
+	}
+	return admission.Allowed("claim create validated")
+}
+
+func (h *Handler) mutateTemplateCreate(ctx context.Context, req admission.Request) admission.Response {
+	var obj sandboxv1.SandboxTemplate
+	if err := h.Decoder.Decode(req, &obj); err != nil {
+		return admission.Errored(http.StatusBadRequest, err)
+	}
+	if err := h.validateNoReservedAnnotations(&obj); err != nil {
+		return admission.Denied(err.Error())
+	}
+	if err := h.validateTemplate(&obj); err != nil {
+		return admission.Denied(err.Error())
+	}
+	cred, runtimeCreds, err := h.templateCredentials(ctx, &obj)
+	if err != nil {
+		return admission.Denied(err.Error())
+	}
+	created, err := h.OpenAPI.CreateTemplate(ctx, mapper.OpenAPICredential(cred), mapper.TemplateCreateRequest(&obj, runtimeCreds))
+	if err != nil {
+		return admission.Denied(err.Error())
+	}
+	obj.Annotations = annotations.Set(obj.Annotations, annotations.TemplateID, created.Identifier())
+	return h.patch(req, &obj)
+}
+
+func (h *Handler) mutateSandboxCreate(ctx context.Context, req admission.Request) admission.Response {
+	var obj sandboxv1.Sandbox
+	if err := h.Decoder.Decode(req, &obj); err != nil {
+		return admission.Errored(http.StatusBadRequest, err)
+	}
+	if err := h.validateNoReservedAnnotations(&obj); err != nil {
+		return admission.Denied(err.Error())
+	}
+	if err := h.validateSandboxName(ctx, &obj, ""); err != nil {
+		return admission.Denied(err.Error())
+	}
+	templateID, err := h.resolveTemplateID(ctx, &obj)
+	if err != nil {
+		return admission.Denied(err.Error())
+	}
+	cred, runtimeCreds, err := h.sandboxCredentials(ctx, &obj)
+	if err != nil {
+		return admission.Denied(err.Error())
+	}
+	startReq := mapper.SandboxStartRequest(&obj, templateID, runtimeCreds)
+	if mapper.SandboxRequestNeedsStorageCredential(startReq) && (startReq.AccessKey == "" || startReq.SecretAccessKey == "") {
+		return admission.Denied("starting a sandbox with KS3/KPFS mount config requires a credentialRef that points to a Secret with accessKey and secretAccessKey")
+	}
+	started, err := h.OpenAPI.StartSandbox(ctx, mapper.OpenAPICredential(cred), startReq)
+	if err != nil {
+		return admission.Denied(err.Error())
+	}
+	obj.Annotations = annotations.Set(obj.Annotations, annotations.TemplateID, started.TemplateIdentifier())
+	obj.Annotations = annotations.Set(obj.Annotations, annotations.SandboxID, started.Identifier())
+	obj.Annotations = annotations.Set(obj.Annotations, annotations.Endpoint, started.Endpoint)
+	obj.Annotations = annotations.Set(obj.Annotations, annotations.Token, started.Token)
+	return h.patch(req, &obj)
+}
+
+func (h *Handler) mutateClaimCreate(ctx context.Context, req admission.Request) admission.Response {
+	var obj sandboxv1.SandboxClaim
+	if err := h.Decoder.Decode(req, &obj); err != nil {
+		return admission.Errored(http.StatusBadRequest, err)
+	}
+	if err := h.validateNoReservedAnnotations(&obj); err != nil {
+		return admission.Denied(err.Error())
 	}
 	if obj.Spec.Replicas < 1 {
 		return admission.Denied("spec.replicas must be greater than zero")
@@ -219,29 +338,28 @@ func (h *Handler) handleClaim(ctx context.Context, req admission.Request) admiss
 		if err := h.ensureSandboxNameAvailable(ctx, obj.Namespace, name, ""); err != nil {
 			return admission.Denied(err.Error())
 		}
-		req := openapi.StartSandboxRequest{
+		startReq := openapi.StartSandboxRequest{
 			TemplateID: templateID,
 			Timeout:    obj.Spec.TimeoutSeconds,
-			EnvVars:    mapper.SandboxStartRequest(&sandboxv1.Sandbox{Spec: sandboxv1.SandboxSpec{Env: obj.Spec.Env}}, templateID, mapper.RuntimeCredentials{}).EnvVars,
+			Envs:       mapper.SandboxStartRequest(&sandboxv1.Sandbox{Spec: sandboxv1.SandboxSpec{Env: obj.Spec.Env}}, templateID, mapper.RuntimeCredentials{}).Envs,
 		}
-		started, err := h.OpenAPI.StartSandbox(ctx, mapper.OpenAPICredential(cred), req)
+		started, err := h.OpenAPI.StartSandbox(ctx, mapper.OpenAPICredential(cred), startReq)
 		if err != nil {
 			return admission.Denied(err.Error())
 		}
-		sandboxIDs = append(sandboxIDs, started.SandboxID)
+		sandboxIDs = append(sandboxIDs, started.Identifier())
 	}
-	if h.Operations != nil {
-		_ = h.Operations.Upsert(ctx, operation.Record{
-			Namespace:  obj.Namespace,
-			Kind:       "SandboxClaim",
-			Name:       obj.Name,
-			Generation: strconv.FormatInt(obj.Generation, 10),
-			Action:     "Create",
-			TemplateID: templateID,
-			SandboxIDs: sandboxIDs,
-		})
+	obj.Annotations = annotations.Set(obj.Annotations, annotations.TemplateID, templateID)
+	obj.Annotations = annotations.Set(obj.Annotations, annotations.SandboxIDs, annotations.EncodeStringSlice(sandboxIDs))
+	return h.patch(req, &obj)
+}
+
+func (h *Handler) patch(req admission.Request, obj client.Object) admission.Response {
+	current, err := json.Marshal(obj)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	return admission.Allowed("claim sandboxes started in openapi")
+	return admission.PatchResponseFromRaw(req.Object.Raw, current)
 }
 
 func (h *Handler) templateCredentials(ctx context.Context, obj *sandboxv1.SandboxTemplate) (*credentials.OpenAPICredential, mapper.RuntimeCredentials, error) {
@@ -317,6 +435,47 @@ func (h *Handler) validateTemplate(obj *sandboxv1.SandboxTemplate) error {
 	return nil
 }
 
+func (h *Handler) validateNoReservedAnnotations(obj client.Object) error {
+	if key, ok := annotations.HasReserved(obj.GetAnnotations()); ok {
+		return fmt.Errorf("annotation %s is managed by sandbox-operator and cannot be set by users", key)
+	}
+	return nil
+}
+
+func (h *Handler) validateReservedAnnotationsUnchanged(oldObj, newObj client.Object) error {
+	if key, changed := annotations.ReservedChanged(oldObj.GetAnnotations(), newObj.GetAnnotations()); changed {
+		return fmt.Errorf("annotation %s is managed by sandbox-operator and cannot be changed by users", key)
+	}
+	return nil
+}
+
+func (h *Handler) validateTemplateMountCredentialRefs(obj *sandboxv1.SandboxTemplate, req openapi.UpdateTemplateRequest) error {
+	if obj.Spec.Template == nil {
+		return nil
+	}
+	if req.KS3MountConfig != nil && req.KS3MountConfig.EnableKS3 {
+		for _, volume := range obj.Spec.Template.Spec.Volumes {
+			if !strings.EqualFold(volume.Type, "ks3") || volume.KS3 == nil {
+				continue
+			}
+			if volume.KS3.CredentialRef == nil || volume.KS3.CredentialRef.Name == "" {
+				return fmt.Errorf("updating KS3 mount config requires credentialRef on all remaining KS3 volumes")
+			}
+		}
+	}
+	if req.KPFSMountConfig != nil && req.KPFSMountConfig.EnableKPFS {
+		for _, volume := range obj.Spec.Template.Spec.Volumes {
+			if !strings.EqualFold(volume.Type, "kpfs") || volume.KPFS == nil {
+				continue
+			}
+			if volume.KPFS.CredentialRef == nil || volume.KPFS.CredentialRef.Name == "" {
+				return fmt.Errorf("updating KPFS mount config requires credentialRef on all remaining KPFS volumes")
+			}
+		}
+	}
+	return nil
+}
+
 func (h *Handler) resolveTemplateID(ctx context.Context, obj *sandboxv1.Sandbox) (string, error) {
 	if obj.Spec.TemplateRef.ID != "" && obj.Spec.TemplateRef.Name != "" {
 		return "", fmt.Errorf("spec.templateRef.id and spec.templateRef.name are mutually exclusive")
@@ -331,10 +490,11 @@ func (h *Handler) resolveTemplateID(ctx context.Context, obj *sandboxv1.Sandbox)
 	if err := h.Client.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Spec.TemplateRef.Name}, &template); err != nil {
 		return "", err
 	}
-	if template.Status.TemplateID == "" {
-		return "", fmt.Errorf("referenced template %s has empty status.templateID", obj.Spec.TemplateRef.Name)
+	templateID := annotations.Get(template.Annotations, annotations.TemplateID)
+	if templateID == "" {
+		return "", fmt.Errorf("referenced template %s has empty template-id annotation", obj.Spec.TemplateRef.Name)
 	}
-	return template.Status.TemplateID, nil
+	return templateID, nil
 }
 
 func (h *Handler) resolveClaimTemplateID(ctx context.Context, obj *sandboxv1.SandboxClaim) (string, error) {
@@ -348,10 +508,11 @@ func (h *Handler) resolveClaimTemplateID(ctx context.Context, obj *sandboxv1.San
 	if err := h.Client.Get(ctx, client.ObjectKey{Namespace: obj.Namespace, Name: obj.Spec.TemplateRef.Name}, &template); err != nil {
 		return "", err
 	}
-	if template.Status.TemplateID == "" {
-		return "", fmt.Errorf("referenced template %s has empty status.templateID", obj.Spec.TemplateRef.Name)
+	templateID := annotations.Get(template.Annotations, annotations.TemplateID)
+	if templateID == "" {
+		return "", fmt.Errorf("referenced template %s has empty template-id annotation", obj.Spec.TemplateRef.Name)
 	}
-	return template.Status.TemplateID, nil
+	return templateID, nil
 }
 
 func (h *Handler) validateSandboxName(ctx context.Context, obj *sandboxv1.Sandbox, currentObjectName string) error {

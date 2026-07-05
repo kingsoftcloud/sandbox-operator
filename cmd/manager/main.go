@@ -22,7 +22,6 @@ import (
 	"sandbox-operator/internal/controller"
 	"sandbox-operator/internal/credentials"
 	"sandbox-operator/internal/openapi"
-	"sandbox-operator/internal/operation"
 	sandboxwebhook "sandbox-operator/internal/webhook"
 )
 
@@ -83,30 +82,38 @@ func main() {
 	openapiClient.Version = openapiVersion
 	openapiClient.AuthMode = openapiAuthMode
 	credentialManager := credentials.NewManager(mgr.GetClient(), defaultOpenAPISecretName)
-	operationRecorder := operation.NewRecorder(mgr.GetClient())
 	operatorNamespace := envOrDefault("OPERATOR_NAMESPACE", envOrDefault("POD_NAMESPACE", "sandbox-operator-system"))
 	operatorUsername := envOrDefault("OPERATOR_USERNAME", fmt.Sprintf("system:serviceaccount:%s:sandbox-operator", operatorNamespace))
 
-	if err := (&controller.SandboxTemplateReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Credentials: credentialManager, OpenAPI: openapiClient, Operations: operationRecorder}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.SandboxTemplateReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Credentials: credentialManager, OpenAPI: openapiClient}).SetupWithManager(mgr); err != nil {
 		ctrl.Log.Error(err, "unable to create SandboxTemplate controller")
 		os.Exit(1)
 	}
-	if err := (&controller.SandboxReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Credentials: credentialManager, OpenAPI: openapiClient, Operations: operationRecorder}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.SandboxReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Credentials: credentialManager, OpenAPI: openapiClient}).SetupWithManager(mgr); err != nil {
 		ctrl.Log.Error(err, "unable to create Sandbox controller")
 		os.Exit(1)
 	}
-	if err := (&controller.SandboxClaimReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Operations: operationRecorder}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.SandboxClaimReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr); err != nil {
 		ctrl.Log.Error(err, "unable to create SandboxClaim controller")
 		os.Exit(1)
 	}
 
-	templateHandler := sandboxwebhook.NewHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, operationRecorder, openapiClient, "SandboxTemplate")
+	templateHandler := sandboxwebhook.NewHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "SandboxTemplate")
 	templateHandler.OperatorUsername = operatorUsername
-	sandboxHandler := sandboxwebhook.NewHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, operationRecorder, openapiClient, "Sandbox")
+	sandboxHandler := sandboxwebhook.NewHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "Sandbox")
 	sandboxHandler.OperatorUsername = operatorUsername
-	claimHandler := sandboxwebhook.NewHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, operationRecorder, openapiClient, "SandboxClaim")
+	claimHandler := sandboxwebhook.NewHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "SandboxClaim")
 	claimHandler.OperatorUsername = operatorUsername
+	templateMutatingHandler := sandboxwebhook.NewMutatingHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "SandboxTemplate")
+	templateMutatingHandler.OperatorUsername = operatorUsername
+	sandboxMutatingHandler := sandboxwebhook.NewMutatingHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "Sandbox")
+	sandboxMutatingHandler.OperatorUsername = operatorUsername
+	claimMutatingHandler := sandboxwebhook.NewMutatingHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "SandboxClaim")
+	claimMutatingHandler.OperatorUsername = operatorUsername
 
+	mgr.GetWebhookServer().Register("/mutate-sandbox-kce-ksyun-com-v1alpha1-sandboxtemplate", &admission.Webhook{Handler: templateMutatingHandler})
+	mgr.GetWebhookServer().Register("/mutate-sandbox-kce-ksyun-com-v1alpha1-sandbox", &admission.Webhook{Handler: sandboxMutatingHandler})
+	mgr.GetWebhookServer().Register("/mutate-sandbox-kce-ksyun-com-v1alpha1-sandboxclaim", &admission.Webhook{Handler: claimMutatingHandler})
 	mgr.GetWebhookServer().Register("/validate-sandbox-kce-ksyun-com-v1alpha1-sandboxtemplate", &admission.Webhook{Handler: templateHandler})
 	mgr.GetWebhookServer().Register("/validate-sandbox-kce-ksyun-com-v1alpha1-sandbox", &admission.Webhook{Handler: sandboxHandler})
 	mgr.GetWebhookServer().Register("/validate-sandbox-kce-ksyun-com-v1alpha1-sandboxclaim", &admission.Webhook{Handler: claimHandler})
@@ -115,7 +122,6 @@ func main() {
 		Client:                  mgr.GetClient(),
 		Credentials:             credentialManager,
 		OpenAPI:                 openapiClient,
-		Operations:              operationRecorder,
 		Interval:                pollInterval,
 		PageSize:                pollPageSize,
 		MaxConcurrentNamespaces: maxConcurrentNamespaces,

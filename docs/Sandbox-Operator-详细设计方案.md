@@ -85,7 +85,7 @@ Kubernetes CR status/spec 同步
 2. 用户写 CR 触发平台写操作，平台写操作失败则拒绝 CR 写入。
 3. Operator 自身写回 CR 时必须跳过 Webhook 的 OpenAPI 写操作，避免循环调用。
 4. `status` 只由 Operator 写；`spec` 可以由用户写，也可以由 Operator 根据 OpenAPI 侧外部修改反写，但 Operator 写入必须跳过 Webhook 的 OpenAPI 写操作。
-5. 删除默认级联到平台资源，可通过 `deletionPolicy: Retain` 改为只删 CR。
+5. 删除 CR 时级联删除对应平台资源。
 6. OpenAPI 外部修改与用户修改不做 Kubernetes 侧冲突检测，采用后写覆盖语义，底层 OpenAPI 负责并发更新一致性。
 7. 所有 OpenAPI 调用必须带 `requestId`/trace 信息并记录 Kubernetes Event。
 
@@ -213,7 +213,6 @@ spec:
     enabled: true
     number: 1
   instanceQuota: 10
-  deletionPolicy: Delete
 ```
 
 关键 Spec 字段：
@@ -244,7 +243,6 @@ spec:
 | `spec.ks3MountConfig` | object | `Ks3MountConfig` | KS3 挂载。 |
 | `spec.preheat` | object | `PreheatConfig` | 预热配置。 |
 | `spec.instanceQuota` | int | `InstanceQuota` | 单模板实例上限。 |
-| `spec.deletionPolicy` | enum | 无 | `Delete` 或 `Retain`。 |
 
 Status 设计：
 
@@ -330,7 +328,6 @@ spec:
           remotePath: /datasets
           localMountPath: /mnt/ks3/datasets
           readOnly: true
-  deletionPolicy: Delete
 ```
 
 关键 Spec 字段：
@@ -339,12 +336,11 @@ spec:
 | --- | --- | --- |
 | `spec.replicas` | 多次调用 `StartSandboxInstance` | 创建实例数量，建议最大值通过 webhook 配置限制。 |
 | `spec.templateRef.id` | `TemplateId` | 直接引用平台模板 ID。 |
-| `spec.templateRef.name` | 先查本地 `SandboxTemplate.status.templateID` | 引用同 Namespace 模板名。 |
+| `spec.templateRef.name` | 先查本地 `SandboxTemplate` 的 template-id annotation | 引用同 Namespace 模板名。 |
 | `spec.timeoutSeconds` | `Timeout` | 60-86400，默认 3600。 |
 | `spec.env` | `Envs` | 实例级环境变量，覆盖模板同名变量。 |
 | `spec.volumes.ks3MountConfig` | `Ks3MountConfig` | 实例级 KS3 挂载。 |
 | `spec.volumes.kpfsMountConfig` | `KpfsMountConfig` | 实例级 KPFS 挂载。 |
-| `spec.deletionPolicy` | 无 | 删除 Claim 时是否级联删除实例。 |
 
 Status 设计：
 
@@ -423,7 +419,6 @@ spec:
         remotePath: /datasets
         localMountPath: /mnt/ks3/datasets
         readOnly: true
-  deletionPolicy: Delete
 ```
 
 关键 Spec 字段：
@@ -438,7 +433,6 @@ spec:
 | `spec.env` | `Envs` | 实例级环境变量。 |
 | `spec.ks3MountConfig` | `Ks3MountConfig` | 实例级 KS3 挂载。 |
 | `spec.kpfsMountConfig` | `KpfsMountConfig` | 实例级 KPFS 挂载。 |
-| `spec.deletionPolicy` | 无 | 删除 CR 时是否删除平台实例。 |
 
 当前 OpenAPI 中 `PauseSandboxInstance` 和 `ResumeSandboxInstance` 控制器代码被注释，Operator v1alpha1 不建议暴露 `spec.paused` 作为可写能力。后续 OpenAPI 恢复暂停/恢复接口后，再增加 `spec.paused` 与对应 Webhook 逻辑。
 
@@ -526,38 +520,31 @@ func isOperatorRequest(req admission.Request) bool {
 - 只有 Operator ServiceAccount 的 status/spec 同步请求跳过平台写操作。
 - 用户若能冒用该 ServiceAccount 会破坏一致性，部署时必须通过 RBAC 禁止业务用户使用。
 
-### 6.2 Validating Webhook 与 ID 回填限制
+### 6.2 Mutating Webhook 与 ID 回填限制
 
-Validating Webhook 不能修改 admission 中的对象，因此无法把 `CreateSandboxTemplate` 返回的 `TemplateId` 或 `StartSandboxInstance` 返回的 `InstanceId` 直接写入被创建的 CR。
+Webhook 不能在 admission 阶段直接写 CR `status`，因为创建请求尚未落库，且 `status` 应通过 status 子资源更新。当前实现使用 Mutating Webhook 在 CREATE 请求中注入内部 annotation，作为短期绑定记录；后续 Poller/Reconciler 消费这些 annotation 后写入 `status` 并清理 annotation。
 
 本设计采用以下约束：
 
-1. Webhook 调用 OpenAPI 成功后放行。
-2. Poller 通过 `GetSandboxTemplateList`、`GetSandboxInstanceList` 找到同 Namespace/凭据下的资源，再写入 CR `status.templateID` 或 `status.sandboxID`。
-3. CR `metadata.name` 必须作为 OpenAPI `TemplateName` 的来源，并要求在同一 OpenAPI 账号/地域/Namespace 下唯一。
-4. 对 `SandboxClaim` 创建出的实例，Webhook 应记录实例创建结果到内部临时操作记录，Poller/Reconciler 再创建或绑定 `Sandbox` CR。
+1. Mutating Webhook 调用 OpenAPI 成功后，通过 JSON Patch 注入内部 annotation 并放行。
+2. Validating Webhook 继续负责 UPDATE/DELETE 校验，并禁止普通用户预置、修改或删除内部 annotation。
+3. Poller/Reconciler 优先读取内部 annotation，再调用 Get 接口写入 CR `spec/status`。平台 ID 只保存在 annotation 中，不写入 `status`。
+4. 对 `SandboxClaim` 创建出的实例，Mutating Webhook 将实例 ID 列表写入内部 annotation，Reconciler 再创建或绑定 `Sandbox` CR。
+5. 创建链路不写 OperationRecord ConfigMap。
 
-`OperationRecord` 不是面向用户的业务资源，而是 Operator 内部的短期绑定缓存。原因是 Validating Webhook 只能允许或拒绝 admission，不能直接把 `CreateSandboxTemplate` / `StartSandboxInstance` 返回的 ID 写入 CR `status`。因此 webhook 需要把返回的 `TemplateId`、`InstanceId` 暂存到同 Namespace 的 ConfigMap，后续 Poller/Reconciler 再消费该记录并写入 CR `status`。该记录不存储 token、AK/SK、密码等敏感信息。
-
-推荐用 ConfigMap 存储：
+内部 annotation 示例：
 
 ```yaml
-apiVersion: v1
-kind: ConfigMap
 metadata:
-  name: sandbox-op-demo-claim
-  namespace: sandbox-demo
-  labels:
-    sandbox.kce.ksyun.com/operation: "true"
-data:
-  kind: SandboxClaim
-  name: demo-claim
-  generation: "1"
-  action: Create
-  sandboxIDs: '["sbx-001","sbx-002","sbx-003"]'
+  annotations:
+    sandbox.kce.ksyun.com/template-id: tpl-001
+    sandbox.kce.ksyun.com/sandbox-id: sbx-001
+    sandbox.kce.ksyun.com/sandbox-ids: '["sbx-001","sbx-002","sbx-003"]'
+    sandbox.kce.ksyun.com/endpoint: https://example
+    sandbox.kce.ksyun.com/token: token-value
 ```
 
-如果不引入操作记录，则 Claim 创建后需要完全依赖 `GetSandboxInstanceList(TemplateId)` 与时间窗口、命名规则进行匹配，可靠性较弱。
+如果 annotation 未能落库，则 Claim 创建后需要依赖 Poller adoption 兜底。
 
 ### 6.3 SandboxTemplateWebhook
 
@@ -591,7 +578,7 @@ data:
 
 1. 跳过 Operator ServiceAccount 请求。
 2. 禁止修改不可变字段，建议 `metadata.name`、`spec.openapiCredentialRef` 不可变。
-3. 如果 `status.templateID` 为空，先按名称查询并绑定；仍为空则拒绝更新。
+3. 如果 template-id annotation 为空则拒绝更新，等待创建或外部同步完成。
 4. 根据新旧对象计算是否需要调用 `UpdateSandboxTemplate`。
 5. 调用 OpenAPI 成功后允许 CR 更新。
 
@@ -608,10 +595,9 @@ data:
 流程：
 
 1. 跳过 Operator ServiceAccount 请求。
-2. 如果 `spec.deletionPolicy=Retain`，直接允许删除 CR。
-3. 如果 `status.templateID` 存在，调用 `DeleteSandboxTemplate(TemplateId)`。
-4. 如果 `status.templateID` 不存在，按 `metadata.name` 查询模板并删除。
-5. OpenAPI 返回不可删除时拒绝删除，用户需要先删除实例或改为 `Retain`。
+2. 如果 template-id annotation 存在，调用 `DeleteSandboxTemplate(TemplateId)`。
+3. 如果 template-id annotation 不存在，只删除本地 CR。
+4. OpenAPI 返回不可删除时保留 finalizer，等待用户处理依赖资源后重试。
 
 ### 6.4 SandboxWebhook
 
@@ -622,14 +608,14 @@ data:
 1. 跳过 Operator ServiceAccount 请求。
 2. 计算有效沙箱名：如果 `spec.name` 为空则使用 `metadata.name`；校验同 Namespace 下不存在其他 `Sandbox` 的有效沙箱名相同的对象。Validating Webhook 不修改对象本身。
 3. 校验 `templateRef.id` 与 `templateRef.name` 二选一。
-4. 若使用 `templateRef.name`，读取同 Namespace `SandboxTemplate.status.templateID`。
+4. 若使用 `templateRef.name`，读取同 Namespace `SandboxTemplate` 的 template-id annotation。
 5. 读取实例级 KS3/KPFS Secret。
 6. 转换为 `StartSandboxInstance` 请求，`spec.name` 不参与 OpenAPI 参数映射。
 7. 调用 OpenAPI。
-8. 记录返回 `InstanceId`、`Endpoint` 到 OperationRecord，不记录 Token。
+8. 将返回的 `InstanceId` 写入 sandbox-id annotation；`Endpoint`、`Token` 后续以 Get OpenAPI 回写 status 为准。
 9. 允许 CR 写入。
 
-`Token` 直接写入 `status.token`。Poller 在绑定 `status.sandboxID` 后调用 `GetSandboxInstanceToken` 获取 token 并更新 status，不创建单独 Secret。
+`Token` 直接呈现在 `status.token`，不创建单独 Secret。平台 ID 不写入 status。
 
 #### UPDATE
 
@@ -643,8 +629,7 @@ data:
 
 流程：
 
-1. `deletionPolicy=Retain` 时直接允许删除 CR。
-2. 否则解析 `status.sandboxID`，调用 `DeleteSandboxInstance(InstanceIds=[id])`。
+1. 解析 sandbox-id annotation，调用 `DeleteSandboxInstance(InstanceIds=[id])`。
 3. 平台侧已不存在时视为成功。
 
 ### 6.5 SandboxClaimWebhook
@@ -659,7 +644,7 @@ data:
 4. 任一创建失败时：
    - 默认拒绝整个 Claim 创建。
    - 对已创建成功的实例执行补偿删除，减少孤儿实例。
-   - 如果补偿失败，记录 Event 和 OperationRecord，交由 Poller 后续清理。
+   - 如果补偿失败，记录 Event，交由 Poller 后续 adoption 或人工清理。
 5. 全部成功后允许 CR 写入。
 
 命名规则：
@@ -679,8 +664,7 @@ data:
 
 #### DELETE
 
-- `deletionPolicy=Delete`：删除 Claim 管理的所有 Sandbox 和平台实例。
-- `deletionPolicy=Retain`：只删除 Claim，保留 Sandbox CR 和平台实例，并清理其 `ownerReferences` 或 `claimRef` 状态。
+- 删除 Claim 管理的所有 Sandbox CR；子 Sandbox 的 finalizer 继续删除对应平台实例。
 
 ## 7. Reconciler 与 Poller 设计
 
@@ -697,9 +681,9 @@ func (r *SandboxTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 允许的本地动作：
 
 - 为新对象补 finalizer。
-- 清理 OperationRecord。
+- 基于内部 annotation 绑定平台资源。
 - 聚合 Claim 下 Sandbox 状态。
-- 当 status 缺失但 OperationRecord 存在时，触发一次快速同步。
+- 当 annotation 存在时，触发一次快速同步并回写 status。
 
 ### 7.2 Poller 主循环
 
@@ -742,7 +726,7 @@ func (p *Poller) Run(ctx context.Context) {
 
 处理：
 
-- 通过 `status.templateID` 优先匹配本地 CR。
+- 通过 template-id annotation 优先匹配本地 CR。
 - 若无 ID，则通过 `metadata.name == TemplateName` 匹配。
 - 若仍无匹配且开启 adoption，则创建 `SandboxTemplate` CR：
   - `metadata.name` 使用平台模板名规范化。
@@ -758,8 +742,8 @@ func (p *Poller) Run(ctx context.Context) {
 
 处理：
 
-- 通过 `status.sandboxID` 匹配本地 Sandbox。
-- 通过 OperationRecord 的 `sandboxIDs` 绑定 Claim 创建出的实例。
+- 通过 sandbox-id annotation 匹配本地 Sandbox。
+- 通过 SandboxClaim 的 sandbox-ids annotation 绑定 Claim 创建出的实例。
 - 若实例存在但 CR 不存在且开启 adoption，则创建 `Sandbox` CR。
 - 将 OpenAPI 返回的实例元数据反写到 `spec`，当前主要包括 `spec.timeoutSeconds`；`spec.name` 仅为 Kubernetes 侧标识，OpenAPI 无对应字段，反写时保持已有值，缺失时使用 `metadata.name`。
 - 不反写实例级 KS3/KPFS 凭据 Secret；如果能识别平台侧凭据漂移，则只更新 `status.credentialDrift` 和 Condition。
@@ -897,7 +881,7 @@ type Interface interface {
 
 | OpenAPI 模板响应 | CR Status |
 | --- | --- |
-| `TemplateId` | `status.templateID` |
+| `TemplateId` | `metadata.annotations["sandbox.kce.ksyun.com/template-id"]` |
 | `Status` | `status.rawStatus`、`status.phase` |
 | `CanDelete` | `status.canDelete` |
 | `CreatedAt` | `status.createdAt` |
@@ -911,8 +895,8 @@ type Interface interface {
 
 | OpenAPI 实例响应 | CR Status |
 | --- | --- |
-| `InstanceId` | `status.sandboxID` |
-| `TemplateId` | `status.template.id` |
+| `InstanceId` | `metadata.annotations["sandbox.kce.ksyun.com/sandbox-id"]` |
+| `TemplateId` | `metadata.annotations["sandbox.kce.ksyun.com/template-id"]` |
 | `TemplateType` | `status.template.type` |
 | `TemplateCategory` | `status.template.category` |
 | `Status` | `status.rawStatus`、`status.phase` |
@@ -955,8 +939,8 @@ type Interface interface {
 - 模板以 `metadata.name` 作为唯一业务键。
 - SandboxClaim 创建出的 Sandbox 使用确定性名称 `${claimName}-${index}`。
 - Webhook 在 CREATE 前查询同名模板或同名本地 Sandbox。
-- OpenAPI 调用成功后写 OperationRecord，记录平台返回 ID。
-- Poller 优先用 OperationRecord 绑定 status。
+- OpenAPI 调用成功后由 mutating webhook 写内部 annotation，记录平台返回 ID。
+- Poller/Reconciler 使用内部 annotation 查询 OpenAPI 并回写 status。
 
 ### 10.2 失败窗口
 
@@ -968,7 +952,7 @@ Webhook 调用 OpenAPI 成功，但 APIServer 后续写 CR 失败，会产生平
 2. OpenAPI 资源命名带 CR 名称，便于后续人工或自动识别。
 3. Poller 开启 adoption，把平台侧孤儿资源补为 CR。
 4. 对 Claim 批量创建失败执行补偿删除。
-5. 记录 OperationRecord 和 Event，便于追踪。
+5. 记录 Event，便于追踪。
 
 ### 10.3 删除一致性
 
@@ -1162,22 +1146,22 @@ E2E 测试：
 
 | 风险 | 影响 | 建议 |
 | --- | --- | --- |
-| Validating Webhook 不能回填 ID | 需要靠 Poller 或 OperationRecord 绑定平台资源 | 实现 OperationRecord，并强制命名唯一。 |
+| Webhook 不能写 status ID | 使用受保护 annotation 绑定平台资源 | ID 只保存在 annotation，status 不再维护 ID。 |
 | OpenAPI 缺少显式幂等 token | APIServer 重试或网络抖动可能导致重复创建 | 创建前查询、确定性命名、失败补偿。 |
 | 当前暂停/恢复 OpenAPI 未启用 | 不能可靠支持 `spec.paused` | v1alpha1 不暴露暂停/恢复，后续接口恢复再加。 |
 | 外部平台资源与 CR 同名 | adoption 可能误绑定 | 同 Namespace/账号/地域范围内强制唯一，adoption 可关闭。 |
 | 平台侧凭据被控制台修改 | Kubernetes Secret 与平台实际凭据不一致 | 不反写 Secret，只写 `status.credentialDrift` 并提示用户更新 Secret。 |
 | `Sandbox.spec.name` 与 `metadata.name` 不一致 | 用户可能误以为底层平台有沙箱名称 | 文档和 CRD 注释明确该字段只用于 Kubernetes 侧标识，Webhook 保证 Namespace 内唯一。 |
 | Secret 权限过大 | 安全风险 | 优先 Namespace 级 RoleBinding，限制 watched namespaces。 |
-| Claim 批量创建部分成功 | 容易产生孤儿实例 | 失败补偿删除，保留 OperationRecord。 |
+| Claim 批量创建部分成功 | 容易产生孤儿实例 | 失败补偿删除，并依赖 Poller adoption 兜底。 |
 
 ## 18. 推荐结论
 
 推荐按照“Webhook 负责用户写、Poller 负责从 OpenAPI 读并同步 CR”的架构实现，保持与现有 PDF 设计一致。OpenAPI 是权威源，Poller 需要同步 `status`，也需要把控制台/OpenAPI 修改的非敏感元数据反写到 `spec`。但必须在工程实现中补齐以下约束，否则会出现资源 ID 丢失、重复创建或凭据所有权混乱问题：
 
 1. `metadata.name` 必须作为模板唯一业务键。
-2. 引入 OperationRecord 记录 Webhook 调用 OpenAPI 后返回的 `TemplateId/InstanceId`。
-3. Poller 必须优先消费 OperationRecord，再使用 List/Get 结果更新 CR `status` 和可反推的 `spec`。
+2. 使用受保护 annotation 记录 Webhook 调用 OpenAPI 后返回的 `TemplateId/InstanceId`。
+3. Poller 必须优先消费 annotation，再使用 List/Get 结果更新 CR `status` 和可反推的 `spec`。
 4. `Sandbox.spec.name` 仅作为 Kubernetes 侧沙箱名，允许修改，不传 OpenAPI，并由 Webhook 保证同 Namespace 唯一。
 5. `SandboxClaim` 创建出的 `Sandbox` 使用确定性名称。
 6. 控制台修改凭据时不反写 Secret，只写 `status.credentialDrift`。

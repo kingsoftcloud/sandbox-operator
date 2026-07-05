@@ -5,7 +5,7 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=stpl
-// +kubebuilder:printcolumn:name="TemplateID",type=string,JSONPath=".status.templateID"
+// +kubebuilder:printcolumn:name="TemplateID",type=string,JSONPath=".metadata.annotations['sandbox\\.kce\\.ksyun\\.com/template-id']"
 // +kubebuilder:printcolumn:name="Type",type=string,JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="Access",type=string,JSONPath=".spec.access"
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
@@ -26,12 +26,10 @@ type SandboxTemplateSpec struct {
 	Template             *RuntimeTemplate            `json:"template,omitempty"`
 	Pool                 *TemplatePoolSpec           `json:"pool,omitempty"`
 	Observability        *ObservabilitySpec          `json:"observability,omitempty"`
-	DeletionPolicy       DeletionPolicy              `json:"deletionPolicy,omitempty"`
 }
 
 type SandboxTemplateStatus struct {
 	ObservedGeneration int64               `json:"observedGeneration,omitempty"`
-	TemplateID         string              `json:"templateID,omitempty"`
 	Phase              Phase               `json:"phase,omitempty"`
 	RawStatus          string              `json:"rawStatus,omitempty"`
 	ExternalUpdatedAt  *metav1.Time        `json:"externalUpdatedAt,omitempty"`

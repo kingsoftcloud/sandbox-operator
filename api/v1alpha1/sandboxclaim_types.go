@@ -21,7 +21,6 @@ type SandboxClaimSpec struct {
 	Env                  []EnvVar                    `json:"env,omitempty"`
 	Ks3MountConfig       *MountConfig                `json:"ks3MountConfig,omitempty"`
 	KpfsMountConfig      *MountConfig                `json:"kpfsMountConfig,omitempty"`
-	DeletionPolicy       DeletionPolicy              `json:"deletionPolicy,omitempty"`
 }
 
 type SandboxClaimStatus struct {
@@ -36,9 +35,8 @@ type SandboxClaimStatus struct {
 }
 
 type ClaimedSandbox struct {
-	Name      string `json:"name"`
-	SandboxID string `json:"sandboxID,omitempty"`
-	Phase     Phase  `json:"phase,omitempty"`
+	Name  string `json:"name"`
+	Phase Phase  `json:"phase,omitempty"`
 }
 
 // +kubebuilder:object:root=true

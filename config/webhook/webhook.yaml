@@ -11,6 +11,63 @@ spec:
       targetPort: webhook
 ---
 apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: sandbox-operator-mutating-webhook
+webhooks:
+  - name: msandboxtemplate.sandbox.kce.ksyun.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: NoneOnDryRun
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 10
+    clientConfig:
+      caBundle: ""
+      service:
+        namespace: sandbox-operator-system
+        name: sandbox-operator-webhook
+        path: /mutate-sandbox-kce-ksyun-com-v1alpha1-sandboxtemplate
+    rules:
+      - apiGroups: ["sandbox.kce.ksyun.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE"]
+        resources: ["sandboxtemplates"]
+  - name: msandbox.sandbox.kce.ksyun.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: NoneOnDryRun
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 10
+    clientConfig:
+      caBundle: ""
+      service:
+        namespace: sandbox-operator-system
+        name: sandbox-operator-webhook
+        path: /mutate-sandbox-kce-ksyun-com-v1alpha1-sandbox
+    rules:
+      - apiGroups: ["sandbox.kce.ksyun.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE"]
+        resources: ["sandboxes"]
+  - name: msandboxclaim.sandbox.kce.ksyun.com
+    admissionReviewVersions: ["v1"]
+    sideEffects: NoneOnDryRun
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 10
+    clientConfig:
+      caBundle: ""
+      service:
+        namespace: sandbox-operator-system
+        name: sandbox-operator-webhook
+        path: /mutate-sandbox-kce-ksyun-com-v1alpha1-sandboxclaim
+    rules:
+      - apiGroups: ["sandbox.kce.ksyun.com"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE"]
+        resources: ["sandboxclaims"]
+---
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
   name: sandbox-operator-validating-webhook

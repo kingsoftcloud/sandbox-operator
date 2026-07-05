@@ -5,6 +5,9 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=sbx
+// +kubebuilder:printcolumn:name="SandboxID",type=string,JSONPath=".metadata.annotations['sandbox\\.kce\\.ksyun\\.com/sandbox-id']"
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Timeout",type=integer,JSONPath=".status.timeoutSeconds"
 type Sandbox struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -22,12 +25,10 @@ type SandboxSpec struct {
 	Env                  []EnvVar                    `json:"env,omitempty"`
 	Ks3MountConfig       *MountConfig                `json:"ks3MountConfig,omitempty"`
 	KpfsMountConfig      *MountConfig                `json:"kpfsMountConfig,omitempty"`
-	DeletionPolicy       DeletionPolicy              `json:"deletionPolicy,omitempty"`
 }
 
 type SandboxStatus struct {
 	ObservedGeneration  int64                       `json:"observedGeneration,omitempty"`
-	SandboxID           string                      `json:"sandboxID,omitempty"`
 	ExternalUpdatedAt   *metav1.Time                `json:"externalUpdatedAt,omitempty"`
 	Template            *SandboxTemplateSummary     `json:"template,omitempty"`
 	Phase               Phase                       `json:"phase,omitempty"`
@@ -43,7 +44,6 @@ type SandboxStatus struct {
 }
 
 type SandboxTemplateSummary struct {
-	ID       string `json:"id,omitempty"`
 	Type     string `json:"type,omitempty"`
 	Category string `json:"category,omitempty"`
 }

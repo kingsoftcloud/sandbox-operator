@@ -1,0 +1,29 @@
+package openapi
+
+import (
+	"errors"
+	"net/http"
+	"testing"
+)
+
+func TestIsNotFoundRecognizesOpenAPICode(t *testing.T) {
+	err := &APIError{
+		Action:     "GetSandboxTemplate",
+		StatusCode: http.StatusBadRequest,
+		Code:       "TemplateNotFound",
+		Message:    "模板不存在",
+	}
+	if !IsNotFound(err) {
+		t.Fatal("TemplateNotFound should be treated as not found")
+	}
+	if IsNotFound(errors.New("plain error")) {
+		t.Fatal("plain error should not be treated as not found")
+	}
+}
+
+func TestResponseErrorParsesTopLevelCode(t *testing.T) {
+	code, message := responseError(baseResponse{}, []byte(`{"Code":"TemplateNotFound","Message":"模板不存在"}`))
+	if code != "TemplateNotFound" || message != "模板不存在" {
+		t.Fatalf("unexpected parsed error: code=%q message=%q", code, message)
+	}
+}

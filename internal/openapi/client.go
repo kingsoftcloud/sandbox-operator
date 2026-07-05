@@ -21,6 +21,7 @@ type APIError struct {
 	Action     string
 	StatusCode int
 	RequestID  string
+	Code       string
 	Message    string
 }
 
@@ -34,7 +35,13 @@ func (e *APIError) Error() string {
 func IsNotFound(err error) bool {
 	var apiErr *APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.StatusCode == http.StatusNotFound
+		if apiErr.StatusCode == http.StatusNotFound {
+			return true
+		}
+		switch apiErr.Code {
+		case "TemplateNotFound", "SandboxNotFound", "InstanceNotFound", "NotFound":
+			return true
+		}
 	}
 	return false
 }
@@ -47,6 +54,7 @@ type Interface interface {
 	ListTemplates(ctx context.Context, cred Credential, req ListTemplatesRequest) (*TemplateList, error)
 
 	StartSandbox(ctx context.Context, cred Credential, req StartSandboxRequest) (*StartSandboxResponse, error)
+	UpdateSandbox(ctx context.Context, cred Credential, req UpdateSandboxRequest) error
 	DeleteSandbox(ctx context.Context, cred Credential, instanceIDs []string) error
 	GetSandbox(ctx context.Context, cred Credential, instanceID string) (*Sandbox, error)
 	ListSandboxes(ctx context.Context, cred Credential, req ListSandboxesRequest) (*SandboxList, error)
@@ -72,9 +80,12 @@ func NewClient(baseURL string) *Client {
 
 type baseResponse struct {
 	RequestID string          `json:"RequestId"`
+	RequestId string          `json:"requestId"`
+	Code      string          `json:"Code,omitempty"`
+	Message   string          `json:"Message,omitempty"`
 	Data      json.RawMessage `json:"Data"`
 	Obj       json.RawMessage `json:"Obj"`
-	Error     any             `json:"Error,omitempty"`
+	Error     json.RawMessage `json:"Error,omitempty"`
 }
 
 func (c *Client) action(ctx context.Context, cred Credential, action string, payload any, out any) error {
@@ -129,7 +140,8 @@ func (c *Client) action(ctx context.Context, cred Credential, action string, pay
 		_ = json.Unmarshal(responseBody, &envelope)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &APIError{Action: action, StatusCode: resp.StatusCode, RequestID: envelope.RequestID, Message: responseErrorMessage(envelope, responseBody)}
+		code, message := responseError(envelope, responseBody)
+		return &APIError{Action: action, StatusCode: resp.StatusCode, RequestID: responseRequestID(envelope), Code: code, Message: message}
 	}
 	if out == nil {
 		return nil
@@ -152,17 +164,38 @@ func (c *Client) action(ctx context.Context, cred Credential, action string, pay
 	return nil
 }
 
-func responseErrorMessage(envelope baseResponse, raw []byte) string {
-	if envelope.Error != nil {
-		data, err := json.Marshal(envelope.Error)
-		if err == nil {
-			return string(data)
+func responseRequestID(envelope baseResponse) string {
+	if envelope.RequestID != "" {
+		return envelope.RequestID
+	}
+	return envelope.RequestId
+}
+
+func responseError(envelope baseResponse, raw []byte) (string, string) {
+	if envelope.Code != "" || envelope.Message != "" {
+		return envelope.Code, envelope.Message
+	}
+	if len(envelope.Error) > 0 {
+		var nested struct {
+			Code    string `json:"Code"`
+			Message string `json:"Message"`
 		}
+		if err := json.Unmarshal(envelope.Error, &nested); err == nil && (nested.Code != "" || nested.Message != "") {
+			return nested.Code, nested.Message
+		}
+		return "", string(envelope.Error)
+	}
+	var direct struct {
+		Code    string `json:"Code"`
+		Message string `json:"Message"`
+	}
+	if err := json.Unmarshal(raw, &direct); err == nil && (direct.Code != "" || direct.Message != "") {
+		return direct.Code, direct.Message
 	}
 	if len(raw) > 0 {
-		return string(raw)
+		return "", string(raw)
 	}
-	return ""
+	return "", ""
 }
 
 func requestID() string {
@@ -289,12 +322,16 @@ func (c *Client) UpdateTemplate(ctx context.Context, cred Credential, req Update
 }
 
 func (c *Client) DeleteTemplate(ctx context.Context, cred Credential, templateID string) error {
-	return c.action(ctx, cred, "DeleteSandboxTemplate", map[string]string{"templateID": templateID}, nil)
+	return c.action(ctx, cred, "DeleteSandboxTemplate", map[string]string{"TemplateId": templateID}, nil)
 }
 
 func (c *Client) GetTemplate(ctx context.Context, cred Credential, templateID string) (*Template, error) {
-	var out Template
-	return &out, c.action(ctx, cred, "GetSandboxTemplate", map[string]string{"templateID": templateID}, &out)
+	var out TemplateResponse
+	if err := c.action(ctx, cred, "GetSandboxTemplate", map[string]string{"TemplateId": templateID}, &out); err != nil {
+		return nil, err
+	}
+	value := out.Value()
+	return &value, nil
 }
 
 func (c *Client) ListTemplates(ctx context.Context, cred Credential, req ListTemplatesRequest) (*TemplateList, error) {
@@ -307,13 +344,21 @@ func (c *Client) StartSandbox(ctx context.Context, cred Credential, req StartSan
 	return &out, c.action(ctx, cred, "StartSandboxInstance", req, &out)
 }
 
+func (c *Client) UpdateSandbox(ctx context.Context, cred Credential, req UpdateSandboxRequest) error {
+	return c.action(ctx, cred, "UpdateSandboxInstance", req, nil)
+}
+
 func (c *Client) DeleteSandbox(ctx context.Context, cred Credential, instanceIDs []string) error {
-	return c.action(ctx, cred, "DeleteSandboxInstance", map[string][]string{"sandboxIDs": instanceIDs}, nil)
+	return c.action(ctx, cred, "DeleteSandboxInstance", map[string][]string{"InstanceIds": instanceIDs}, nil)
 }
 
 func (c *Client) GetSandbox(ctx context.Context, cred Credential, instanceID string) (*Sandbox, error) {
-	var out Sandbox
-	return &out, c.action(ctx, cred, "GetSandboxInstance", map[string]string{"sandboxID": instanceID}, &out)
+	var out SandboxResponse
+	if err := c.action(ctx, cred, "GetSandboxInstance", map[string]string{"InstanceId": instanceID}, &out); err != nil {
+		return nil, err
+	}
+	value := out.Value()
+	return &value, nil
 }
 
 func (c *Client) ListSandboxes(ctx context.Context, cred Credential, req ListSandboxesRequest) (*SandboxList, error) {

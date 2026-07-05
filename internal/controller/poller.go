@@ -8,14 +8,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	sandboxv1 "sandbox-operator/api/v1alpha1"
+	"sandbox-operator/internal/annotations"
 	"sandbox-operator/internal/credentials"
 	"sandbox-operator/internal/mapper"
 	"sandbox-operator/internal/openapi"
-	"sandbox-operator/internal/operation"
 	statusutil "sandbox-operator/internal/status"
 )
 
@@ -23,7 +24,6 @@ type Poller struct {
 	Client                  client.Client
 	Credentials             *credentials.Manager
 	OpenAPI                 openapi.Interface
-	Operations              *operation.Recorder
 	Interval                time.Duration
 	PageSize                int
 	MaxConcurrentNamespaces int
@@ -111,10 +111,14 @@ func (p *Poller) SyncNamespace(ctx context.Context, namespace string) error {
 	}
 	logger.V(1).Info("sync namespace with openapi credential", "secret", cred.SecretName)
 	openapiCred := mapper.OpenAPICredential(cred)
+	var firstErr error
 	if err := p.syncTemplates(ctx, namespace, openapiCred); err != nil {
-		return err
+		firstErr = err
 	}
-	return p.syncSandboxes(ctx, namespace, openapiCred)
+	if err := p.syncSandboxes(ctx, namespace, openapiCred); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
 }
 
 func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred openapi.Credential) error {
@@ -130,20 +134,17 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 		obj := &local.Items[i]
 		knownNames[obj.Name] = true
 		statusBefore := cloneForCompare(obj.Status)
-		if obj.Status.TemplateID == "" {
-			if p.Operations == nil {
-				continue
-			}
-			rec, err := p.Operations.Get(ctx, namespace, "SandboxTemplate", obj.Name)
-			if err != nil || rec.TemplateID == "" {
-				continue
-			}
-			obj.Status.TemplateID = rec.TemplateID
+		templateID := annotations.Get(obj.Annotations, annotations.TemplateID)
+		if templateID == "" {
+			continue
 		}
-		knownIDs[obj.Status.TemplateID] = true
-		remote, err := p.OpenAPI.GetTemplate(ctx, cred, obj.Status.TemplateID)
+		knownIDs[templateID] = true
+		remote, err := p.OpenAPI.GetTemplate(ctx, cred, templateID)
 		if err != nil {
 			if openapi.IsNotFound(err) {
+				if err := p.handleMissingTemplate(ctx, obj); err != nil {
+					return err
+				}
 				continue
 			}
 			return err
@@ -152,14 +153,14 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 		mapper.ApplyTemplateSpecFromOpenAPI(obj, *remote)
 		if hasChanged(specBefore, obj.Spec) {
 			if err := p.Client.Update(ctx, obj); err != nil {
-				return err
+				return ignoreConflict(err)
 			}
 		}
 		mapper.ApplyTemplateStatusFromOpenAPI(obj, *remote)
 		statusutil.SetCondition(&obj.Status.Conditions, sandboxv1.ConditionSynced, "True", "OpenAPISynced", "Template has been synced from Sandbox OpenAPI.", obj.Generation)
 		if hasChanged(statusBefore, obj.Status) {
 			if err := p.Client.Status().Update(ctx, obj); err != nil {
-				return err
+				return ignoreConflict(err)
 			}
 		}
 	}
@@ -179,7 +180,15 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 			if knownIDs[templateID] {
 				continue
 			}
-			name := uniqueName(sanitizeName(remote.TemplateName, "template-"+shortID(templateID)), knownNames)
+			detail, err := p.OpenAPI.GetTemplate(ctx, cred, templateID)
+			if err != nil {
+				if openapi.IsNotFound(err) {
+					continue
+				}
+				return err
+			}
+			remote = *detail
+			name := uniqueName(externalResourceName(remote.TemplateName, templateID), knownNames)
 			obj := &sandboxv1.SandboxTemplate{
 				TypeMeta: metav1.TypeMeta{APIVersion: sandboxv1.GroupVersion.String(), Kind: "SandboxTemplate"},
 				ObjectMeta: metav1.ObjectMeta{
@@ -187,6 +196,9 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 					Name:      name,
 					Labels: map[string]string{
 						"sandbox.kce.ksyun.com/adopted": "true",
+					},
+					Annotations: map[string]string{
+						annotations.TemplateID: templateID,
 					},
 				},
 			}
@@ -197,7 +209,7 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 			mapper.ApplyTemplateStatusFromOpenAPI(obj, remote)
 			statusutil.SetCondition(&obj.Status.Conditions, sandboxv1.ConditionSynced, "True", "OpenAPIAdopted", "Template has been adopted from Sandbox OpenAPI.", obj.Generation)
 			if err := p.Client.Status().Update(ctx, obj); err != nil {
-				return err
+				return ignoreConflict(err)
 			}
 			knownIDs[templateID] = true
 			knownNames[name] = true
@@ -209,6 +221,14 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 		}
 	}
 	return nil
+}
+
+func (p *Poller) handleMissingTemplate(ctx context.Context, obj *sandboxv1.SandboxTemplate) error {
+	return client.IgnoreNotFound(p.Client.Delete(ctx, obj))
+}
+
+func (p *Poller) handleMissingSandbox(ctx context.Context, obj *sandboxv1.Sandbox) error {
+	return client.IgnoreNotFound(p.Client.Delete(ctx, obj))
 }
 
 func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred openapi.Credential) error {
@@ -224,26 +244,17 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 		obj := &local.Items[i]
 		knownNames[obj.Name] = true
 		statusBefore := cloneForCompare(obj.Status)
-		if obj.Status.SandboxID == "" {
-			if p.Operations == nil {
-				continue
-			}
-			rec, err := p.Operations.Get(ctx, namespace, "Sandbox", obj.Name)
-			if err != nil || rec.SandboxID == "" {
-				continue
-			}
-			obj.Status.SandboxID = rec.SandboxID
-			if rec.Endpoint != "" {
-				obj.Status.Endpoint = rec.Endpoint
-			}
-			if rec.Token != "" {
-				obj.Status.Token = rec.Token
-			}
+		sandboxID := annotations.Get(obj.Annotations, annotations.SandboxID)
+		if sandboxID == "" {
+			continue
 		}
-		knownIDs[obj.Status.SandboxID] = true
-		remote, err := p.OpenAPI.GetSandbox(ctx, cred, obj.Status.SandboxID)
+		knownIDs[sandboxID] = true
+		remote, err := p.OpenAPI.GetSandbox(ctx, cred, sandboxID)
 		if err != nil {
 			if openapi.IsNotFound(err) {
+				if err := p.handleMissingSandbox(ctx, obj); err != nil {
+					return err
+				}
 				continue
 			}
 			return err
@@ -252,14 +263,14 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 		mapper.ApplySandboxSpecFromOpenAPI(obj, *remote)
 		if hasChanged(specBefore, obj.Spec) {
 			if err := p.Client.Update(ctx, obj); err != nil {
-				return err
+				return ignoreConflict(err)
 			}
 		}
 		mapper.ApplySandboxStatusFromOpenAPI(obj, *remote)
 		statusutil.SetCondition(&obj.Status.Conditions, sandboxv1.ConditionSynced, "True", "OpenAPISynced", "Sandbox has been synced from Sandbox OpenAPI.", obj.Generation)
 		if hasChanged(statusBefore, obj.Status) {
 			if err := p.Client.Status().Update(ctx, obj); err != nil {
-				return err
+				return ignoreConflict(err)
 			}
 		}
 	}
@@ -271,10 +282,11 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 		logger.V(1).Info("listed sandboxes from openapi", "remoteCount", len(remotes), "localCount", len(local.Items))
 		adopted := 0
 		for _, remote := range remotes {
-			if remote.SandboxID == "" || knownIDs[remote.SandboxID] {
+			sandboxID := remote.Identifier()
+			if sandboxID == "" || knownIDs[sandboxID] {
 				continue
 			}
-			name := uniqueName("sbx-"+shortID(remote.SandboxID), knownNames)
+			name := uniqueName(externalResourceName(remote.Name(), sandboxID), knownNames)
 			obj := &sandboxv1.Sandbox{
 				TypeMeta: metav1.TypeMeta{APIVersion: sandboxv1.GroupVersion.String(), Kind: "Sandbox"},
 				ObjectMeta: metav1.ObjectMeta{
@@ -283,12 +295,15 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 					Labels: map[string]string{
 						"sandbox.kce.ksyun.com/adopted": "true",
 					},
+					Annotations: map[string]string{
+						annotations.SandboxID:  sandboxID,
+						annotations.TemplateID: remote.TemplateIdentifier(),
+					},
 				},
 				Spec: sandboxv1.SandboxSpec{
 					Name:           name,
-					TemplateRef:    sandboxv1.TemplateReference{ID: remote.TemplateID},
+					TemplateRef:    sandboxv1.TemplateReference{ID: remote.TemplateIdentifier()},
 					TimeoutSeconds: remote.Timeout,
-					DeletionPolicy: sandboxv1.DeletionPolicyRetain,
 				},
 			}
 			mapper.ApplySandboxSpecFromOpenAPI(obj, remote)
@@ -298,12 +313,12 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 			mapper.ApplySandboxStatusFromOpenAPI(obj, remote)
 			statusutil.SetCondition(&obj.Status.Conditions, sandboxv1.ConditionSynced, "True", "OpenAPIAdopted", "Sandbox has been adopted from Sandbox OpenAPI.", obj.Generation)
 			if err := p.Client.Status().Update(ctx, obj); err != nil {
-				return err
+				return ignoreConflict(err)
 			}
-			knownIDs[remote.SandboxID] = true
+			knownIDs[sandboxID] = true
 			knownNames[name] = true
 			adopted++
-			logger.Info("adopted sandbox from openapi", "name", name, "sandboxID", remote.SandboxID)
+			logger.Info("adopted sandbox from openapi", "name", name, "sandboxID", sandboxID)
 		}
 		if adopted > 0 {
 			logger.Info("adopted sandboxes from openapi", "count", adopted)
@@ -330,11 +345,31 @@ func (p *Poller) listAllTemplates(ctx context.Context, cred openapi.Credential) 
 }
 
 func (p *Poller) listAllSandboxes(ctx context.Context, cred openapi.Credential) ([]openapi.Sandbox, error) {
+	var out []openapi.Sandbox
+	seen := map[string]bool{}
+	for _, state := range sandboxListStates() {
+		items, err := p.listSandboxesByState(ctx, cred, state)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			id := item.Identifier()
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (p *Poller) listSandboxesByState(ctx context.Context, cred openapi.Credential, state string) ([]openapi.Sandbox, error) {
 	pageSize := p.pageSize()
 	page := 1
 	var out []openapi.Sandbox
 	for {
-		list, err := p.OpenAPI.ListSandboxes(ctx, cred, openapi.ListSandboxesRequest{PageNum: page, PageSize: pageSize})
+		list, err := p.OpenAPI.ListSandboxes(ctx, cred, openapi.ListSandboxesRequest{State: state, PageNum: page, PageSize: pageSize})
 		if err != nil {
 			return nil, err
 		}
@@ -344,6 +379,10 @@ func (p *Poller) listAllSandboxes(ctx context.Context, cred openapi.Credential) 
 		}
 		page++
 	}
+}
+
+func sandboxListStates() []string {
+	return []string{"", "STARTING", "RUNNING", "KILLING", "FAILED", "UNHEALTHY", "PAUSED", "RESUMING"}
 }
 
 func (p *Poller) pageSize() int {
@@ -396,6 +435,20 @@ func uniqueName(base string, used map[string]bool) string {
 			return candidate
 		}
 	}
+}
+
+func externalResourceName(preferredName, id string) string {
+	if isValidKubernetesName(preferredName) {
+		return preferredName
+	}
+	return sanitizeName(id, "unknown")
+}
+
+func isValidKubernetesName(name string) bool {
+	if name == "" {
+		return false
+	}
+	return len(validation.IsDNS1123Subdomain(name)) == 0
 }
 
 func shortID(id string) string {

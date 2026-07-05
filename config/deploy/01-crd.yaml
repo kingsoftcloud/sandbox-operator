@@ -25,7 +25,7 @@ spec:
           jsonPath: .spec.access
         - name: TemplateID
           type: string
-          jsonPath: .status.templateID
+          jsonPath: ".metadata.annotations['sandbox\\.kce\\.ksyun\\.com/template-id']"
         - name: Phase
           type: string
           jsonPath: .status.phase
@@ -226,9 +226,6 @@ spec:
                           properties:
                             name:
                               type: string
-                deletionPolicy:
-                  type: string
-                  enum: ["Delete", "Retain"]
               x-kubernetes-preserve-unknown-fields: true
             status:
               type: object
@@ -258,7 +255,7 @@ spec:
           jsonPath: .spec.name
         - name: SandboxID
           type: string
-          jsonPath: .status.sandboxID
+          jsonPath: ".metadata.annotations['sandbox\\.kce\\.ksyun\\.com/sandbox-id']"
         - name: Phase
           type: string
           jsonPath: .status.phase

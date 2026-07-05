@@ -5,13 +5,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type DeletionPolicy string
-
-const (
-	DeletionPolicyDelete DeletionPolicy = "Delete"
-	DeletionPolicyRetain DeletionPolicy = "Retain"
-)
-
 type Phase string
 
 const (

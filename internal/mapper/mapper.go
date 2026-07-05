@@ -1,6 +1,8 @@
 package mapper
 
 import (
+	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -9,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	sandboxv1 "sandbox-operator/api/v1alpha1"
+	"sandbox-operator/internal/annotations"
 	"sandbox-operator/internal/credentials"
 	"sandbox-operator/internal/openapi"
 )
@@ -29,46 +32,145 @@ func TemplateCreateRequest(in *sandboxv1.SandboxTemplate, runtime RuntimeCredent
 	spec := in.Spec
 	tpl := templateSpec(spec)
 	return openapi.CreateTemplateRequest{
-		TemplateName:       in.Name,
-		Description:        spec.Description,
-		TemplateCategory:   templateAccess(spec.Access),
-		TemplateType:       templateType(spec.Type),
-		Image:              templateImageURL(tpl),
-		ImageSource:        templateImageSource(tpl),
-		CredentialServer:   registryServer(runtime.Registry),
-		CredentialUsername: registryUsername(runtime.Registry),
-		CredentialPassword: registryPassword(runtime.Registry),
-		Command:            templateStartCommand(tpl),
-		Ports:              templatePorts(tpl),
-		CPU:                templateCPU(tpl),
-		Memory:             templateMemoryMB(tpl),
-		DiskSizeMB:         templateDiskMB(tpl),
-		Envs:               templateEnv(tpl),
-		NetworkConfig:      templateNetwork(tpl),
-		TargetPoolSize:     templatePoolTargetSize(spec),
-		KS3MountConfig:     templateMountToOpenAPI(tpl, runtime.KS3ByName, "ks3"),
-		KPFSMountConfig:    templateMountToOpenAPI(tpl, runtime.KPFSByName, "kpfs"),
-		KlogConfig:         templateKlogToOpenAPI(spec, runtime.Klog),
-		SkillConfig:        templateSkillToOpenAPI(tpl),
-		DataDisks:          templateDataDisks(tpl),
+		TemplateName:     in.Name,
+		Description:      spec.Description,
+		TemplateCategory: templateAccess(spec.Access),
+		TemplateType:     templateType(spec.Type),
+		ImageConfig:      templateImageConfig(tpl, runtime.Registry),
+		Command:          templateStartCommand(tpl),
+		Ports:            templatePorts(tpl),
+		CPU:              templateCPU(tpl),
+		Memory:           templateMemoryGB(tpl),
+		Envs:             templateEnv(tpl),
+		NetworkConfig:    templateNetwork(tpl),
+		PreheatConfig:    templatePreheat(spec),
+		KS3MountConfig:   templateMountToOpenAPI(tpl, "ks3", runtime.KS3ByName),
+		KPFSMountConfig:  templateMountToOpenAPI(tpl, "kpfs", runtime.KPFSByName),
+		KlogConfig:       templateKlogToOpenAPI(spec, runtime.Klog),
+		SkillConfig:      templateSkillToOpenAPI(tpl),
+		InstanceQuota:    templatePoolInstanceQuota(spec),
+		AccessKey:        storageAccessKey(runtime),
+		SecretAccessKey:  storageSecretAccessKey(runtime),
 	}
 }
 
 func TemplateUpdateRequest(in *sandboxv1.SandboxTemplate, runtime RuntimeCredentials) openapi.UpdateTemplateRequest {
 	req := TemplateCreateRequest(in, runtime)
 	return openapi.UpdateTemplateRequest{
-		TemplateID:            in.Status.TemplateID,
+		TemplateID:            annotations.Get(in.Annotations, annotations.TemplateID),
 		CreateTemplateRequest: req,
 	}
+}
+
+func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime RuntimeCredentials) openapi.UpdateTemplateRequest {
+	full := TemplateCreateRequest(in, runtime)
+	req := openapi.UpdateTemplateRequest{TemplateID: annotations.Get(in.Annotations, annotations.TemplateID)}
+
+	if old == nil {
+		req.CreateTemplateRequest = full
+		return req
+	}
+	if in.Spec.Description != old.Spec.Description {
+		req.Description = full.Description
+	}
+	if in.Spec.Access != old.Spec.Access {
+		req.TemplateCategory = full.TemplateCategory
+	}
+	if in.Spec.Type != old.Spec.Type {
+		req.TemplateType = full.TemplateType
+	}
+	inTpl, oldTpl := templateSpec(in.Spec), templateSpec(old.Spec)
+	if !reflect.DeepEqual(templateImage(inTpl), templateImage(oldTpl)) {
+		req.ImageConfig = full.ImageConfig
+	}
+	if !reflect.DeepEqual(templatePortsSpec(inTpl), templatePortsSpec(oldTpl)) {
+		req.Ports = full.Ports
+	}
+	if templateStartCommand(inTpl) != templateStartCommand(oldTpl) {
+		req.Command = full.Command
+	}
+	if !reflect.DeepEqual(templateResources(inTpl), templateResources(oldTpl)) {
+		req.CPU = full.CPU
+		req.Memory = full.Memory
+		if !templateDiskEqual(inTpl, oldTpl) {
+			req.KecConfig = templateKecConfig(inTpl)
+		}
+	}
+	if !reflect.DeepEqual(templateDataDiskSpec(inTpl), templateDataDiskSpec(oldTpl)) {
+		req.KecConfig = templateKecConfig(inTpl)
+	}
+	if !reflect.DeepEqual(templateEnvSpec(inTpl), templateEnvSpec(oldTpl)) {
+		req.Envs = full.Envs
+	}
+	if !reflect.DeepEqual(templateNetworkSpec(inTpl), templateNetworkSpec(oldTpl)) {
+		req.NetworkConfig = full.NetworkConfig
+	}
+	if !reflect.DeepEqual(templateSkillSpec(inTpl), templateSkillSpec(oldTpl)) {
+		req.SkillConfig = full.SkillConfig
+	}
+	ks3Changed := !reflect.DeepEqual(templateVolumes(inTpl, "ks3"), templateVolumes(oldTpl, "ks3"))
+	kpfsChanged := !reflect.DeepEqual(templateVolumes(inTpl, "kpfs"), templateVolumes(oldTpl, "kpfs"))
+	if ks3Changed || kpfsChanged {
+		req.KS3MountConfig = templateMountUpdateToOpenAPI(inTpl, "ks3", runtime.KS3ByName)
+		req.KPFSMountConfig = templateMountUpdateToOpenAPI(inTpl, "kpfs", runtime.KPFSByName)
+		req.AccessKey = full.AccessKey
+		req.SecretAccessKey = full.SecretAccessKey
+	}
+	if !reflect.DeepEqual(in.Spec.Observability, old.Spec.Observability) {
+		req.KlogConfig = full.KlogConfig
+	}
+	if !reflect.DeepEqual(in.Spec.Pool, old.Spec.Pool) {
+		req.PreheatConfig = full.PreheatConfig
+	}
+	return req
+}
+
+func TemplateRequestNeedsStorageCredential(req openapi.UpdateTemplateRequest) bool {
+	return (req.KS3MountConfig != nil && req.KS3MountConfig.EnableKS3) ||
+		(req.KPFSMountConfig != nil && req.KPFSMountConfig.EnableKPFS)
+}
+
+func CompleteTemplateUpdateRequestFromRemote(req *openapi.UpdateTemplateRequest, remote openapi.Template) error {
+	if req == nil || req.KecConfig == nil || !req.KecConfig.Enabled {
+		return nil
+	}
+	if remote.KecConfig != nil && req.KecConfig.InstanceType == "" {
+		req.KecConfig.InstanceType = remote.KecConfig.InstanceType
+	}
+	if remote.KecConfig != nil && req.KecConfig.SystemDiskType == "" {
+		req.KecConfig.SystemDiskType = remote.KecConfig.SystemDiskType
+	}
+	if remote.KecConfig != nil && req.KecConfig.SystemDiskSizeGB == 0 {
+		req.KecConfig.SystemDiskSizeGB = remote.KecConfig.SystemDiskSizeGB
+	}
+	if req.KecConfig.InstanceType == "" || req.KecConfig.SystemDiskType == "" || req.KecConfig.SystemDiskSizeGB == 0 {
+		return fmt.Errorf("updating disk requires existing OpenAPI KecConfig with InstanceType, SystemDiskType and SystemDiskSize")
+	}
+	return nil
 }
 
 func SandboxStartRequest(in *sandboxv1.Sandbox, templateID string, runtime RuntimeCredentials) openapi.StartSandboxRequest {
 	spec := in.Spec
 	return openapi.StartSandboxRequest{
-		TemplateID: templateID,
-		Timeout:    spec.TimeoutSeconds,
-		EnvVars:    envsToMap(spec.Env),
-		Metadata:   sandboxMetadata(spec, runtime),
+		TemplateID:      templateID,
+		Timeout:         spec.TimeoutSeconds,
+		Envs:            envsToOpenAPI(spec.Env),
+		KS3MountConfig:  mountToOpenAPI(spec.Ks3MountConfig, "ks3"),
+		KPFSMountConfig: mountToOpenAPI(spec.KpfsMountConfig, "kpfs"),
+		AccessKey:       sandboxStorageAccessKey(runtime),
+		SecretAccessKey: sandboxStorageSecretAccessKey(runtime),
+	}
+}
+
+func SandboxRequestNeedsStorageCredential(req openapi.StartSandboxRequest) bool {
+	return (req.KS3MountConfig != nil && req.KS3MountConfig.EnableKS3) ||
+		(req.KPFSMountConfig != nil && req.KPFSMountConfig.EnableKPFS)
+}
+
+func SandboxUpdateRequest(in *sandboxv1.Sandbox) openapi.UpdateSandboxRequest {
+	return openapi.UpdateSandboxRequest{
+		InstanceID: annotations.Get(in.Annotations, annotations.SandboxID),
+		Timeout:    in.Spec.TimeoutSeconds,
 	}
 }
 
@@ -84,10 +186,10 @@ type RuntimeCredentials struct {
 func ApplyTemplateSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.Template) {
 	obj.Spec.Description = remote.Description
 	obj.Spec.Access = displayAccess(remote.TemplateCategory)
-	obj.Spec.Type = remote.TemplateType
+	obj.Spec.Type = displayTemplateType(remote.TemplateType)
 	applyRuntimeSpecFromOpenAPI(obj, remote)
-	if remote.TargetPoolSize > 0 {
-		obj.Spec.Pool = &sandboxv1.TemplatePoolSpec{TargetSize: remote.TargetPoolSize}
+	if remote.TargetPoolSize() > 0 {
+		obj.Spec.Pool = &sandboxv1.TemplatePoolSpec{TargetSize: remote.TargetPoolSize()}
 	} else {
 		obj.Spec.Pool = nil
 	}
@@ -95,7 +197,6 @@ func ApplyTemplateSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi
 
 func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.Template) {
 	obj.Status.ObservedGeneration = obj.Generation
-	obj.Status.TemplateID = remote.Identifier()
 	obj.Status.Phase = TemplatePhase(remote.Status)
 	obj.Status.RawStatus = remote.Status
 	obj.Status.CanDelete = remote.CanDelete
@@ -103,7 +204,7 @@ func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote opena
 	obj.Status.UpdatedAt = metaTimeString(remote.UpdatedAt)
 	obj.Status.ExternalUpdatedAt = metaTimeString(remote.UpdatedAt)
 	if remote.KlogConfig != nil {
-		obj.Status.Klog = &sandboxv1.KlogStatus{ProjectName: remote.KlogConfig.ProjectName, PoolName: remote.KlogConfig.PoolNameContainer}
+		obj.Status.Klog = &sandboxv1.KlogStatus{ProjectName: remote.KlogConfig.ProjectName, PoolName: remote.KlogConfig.PoolName}
 	}
 	obj.Status.Quota = &sandboxv1.QuotaStatus{
 		InstanceQuota:                remote.InstanceQuota,
@@ -111,9 +212,9 @@ func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote opena
 		RemainingSystemInstanceQuota: remote.RemainingSystemInstanceQuota,
 	}
 	obj.Status.Preheat = &sandboxv1.PreheatStatus{
-		Enabled:                 remote.TargetPoolSize > 0,
-		Number:                  remote.TargetPoolSize,
-		PreheatedInstanceNumber: remote.PreheatedInstanceNumber,
+		Enabled:                 remote.TargetPoolSize() > 0,
+		Number:                  remote.TargetPoolSize(),
+		PreheatedInstanceNumber: remote.PreheatedInstanceNumber(),
 	}
 	if remote.CredentialAccessKeyIDMasked != "" {
 		now := metav1.Now()
@@ -130,8 +231,13 @@ func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote opena
 }
 
 func ApplySandboxSpecFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
-	if obj.Spec.Name == "" {
+	if remote.Name() != "" {
+		obj.Spec.Name = remote.Name()
+	} else if obj.Spec.Name == "" {
 		obj.Spec.Name = obj.Name
+	}
+	if obj.Spec.TemplateRef.ID == "" && remote.TemplateIdentifier() != "" {
+		obj.Spec.TemplateRef.ID = remote.TemplateIdentifier()
 	}
 	if remote.Timeout > 0 {
 		obj.Spec.TimeoutSeconds = remote.Timeout
@@ -140,11 +246,9 @@ func ApplySandboxSpecFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox)
 
 func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
 	obj.Status.ObservedGeneration = obj.Generation
-	obj.Status.SandboxID = remote.SandboxID
 	obj.Status.ExternalUpdatedAt = metaTimeString(remote.EndTime)
 	obj.Status.Template = &sandboxv1.SandboxTemplateSummary{
-		ID:       remote.TemplateID,
-		Type:     remote.TemplateType,
+		Type:     displayTemplateType(remote.TemplateType),
 		Category: remote.TemplateCategory,
 	}
 	obj.Status.Phase = SandboxPhase(remote.Status)
@@ -207,6 +311,13 @@ func templateSpec(spec sandboxv1.SandboxTemplateSpec) *sandboxv1.RuntimeTemplate
 	return &spec.Template.Spec
 }
 
+func templateImage(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.TemplateImageSpec {
+	if tpl == nil {
+		return nil
+	}
+	return tpl.Image
+}
+
 func templateImageURL(tpl *sandboxv1.RuntimeTemplateSpec) string {
 	if tpl != nil && tpl.Image != nil {
 		return tpl.Image.Image
@@ -214,11 +325,60 @@ func templateImageURL(tpl *sandboxv1.RuntimeTemplateSpec) string {
 	return ""
 }
 
-func templateImageSource(tpl *sandboxv1.RuntimeTemplateSpec) string {
+func templateImageConfig(tpl *sandboxv1.RuntimeTemplateSpec, registry *credentials.RegistryCredential) *openapi.ImageConfig {
 	if tpl != nil && tpl.Image != nil {
-		return tpl.Image.Source
+		imageURL, imageTag := splitImageTag(tpl.Image.Image)
+		out := &openapi.ImageConfig{
+			ImageSource: templateImageSource(tpl.Image.Source),
+			ImageURL:    imageURL,
+			ImageTag:    imageTag,
+		}
+		if !strings.EqualFold(out.ImageSource, "Public") {
+			out.ImageEndpoint, out.ImageNamespace, out.ImageName = splitRegistryImage(imageURL, registryServer(registry))
+			out.CredentialUsername = registryUsername(registry)
+			out.CredentialPassword = registryPassword(registry)
+		}
+		return out
 	}
-	return ""
+	return nil
+}
+
+func templateImageSource(value string) string {
+	switch strings.ToLower(value) {
+	case "public":
+		return "Public"
+	case "personal":
+		return "Personal"
+	case "enterprise":
+		return "Enterprise"
+	default:
+		return value
+	}
+}
+
+func splitImageTag(image string) (string, string) {
+	if image == "" {
+		return "", ""
+	}
+	lastSlash := strings.LastIndex(image, "/")
+	lastColon := strings.LastIndex(image, ":")
+	if lastColon > lastSlash {
+		return image[:lastColon], image[lastColon+1:]
+	}
+	return image, ""
+}
+
+func splitRegistryImage(image, defaultEndpoint string) (endpoint, namespace, name string) {
+	trimmed := strings.TrimPrefix(image, "https://")
+	trimmed = strings.TrimPrefix(trimmed, "http://")
+	parts := strings.Split(trimmed, "/")
+	if len(parts) >= 3 {
+		return parts[0], parts[1], strings.Join(parts[2:], "/")
+	}
+	if len(parts) == 2 {
+		return defaultEndpoint, parts[0], parts[1]
+	}
+	return defaultEndpoint, "", image
 }
 
 func templateStartCommand(tpl *sandboxv1.RuntimeTemplateSpec) string {
@@ -241,6 +401,13 @@ func templatePorts(tpl *sandboxv1.RuntimeTemplateSpec) []int {
 	return out
 }
 
+func templatePortsSpec(tpl *sandboxv1.RuntimeTemplateSpec) []sandboxv1.ContainerPortSpec {
+	if tpl == nil {
+		return nil
+	}
+	return tpl.Ports
+}
+
 func templateCPU(tpl *sandboxv1.RuntimeTemplateSpec) int {
 	if tpl != nil && tpl.Resources != nil && tpl.Resources.CPU != "" {
 		value, err := strconv.Atoi(strings.TrimSpace(tpl.Resources.CPU))
@@ -251,6 +418,31 @@ func templateCPU(tpl *sandboxv1.RuntimeTemplateSpec) int {
 	return 0
 }
 
+func templateResources(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.RuntimeResourceSpec {
+	if tpl == nil {
+		return nil
+	}
+	return tpl.Resources
+}
+
+func templateDiskEqual(a, b *sandboxv1.RuntimeTemplateSpec) bool {
+	return templateDiskGB(a) == templateDiskGB(b)
+}
+
+func templateDiskGB(tpl *sandboxv1.RuntimeTemplateSpec) int64 {
+	if tpl == nil || tpl.Resources == nil || tpl.Resources.Disk.IsZero() {
+		return 0
+	}
+	return int64(quantityGB(tpl.Resources.Disk.Value()))
+}
+
+func templateDataDiskSpec(tpl *sandboxv1.RuntimeTemplateSpec) []sandboxv1.DataDiskSpec {
+	if tpl == nil {
+		return nil
+	}
+	return tpl.DataDisks
+}
+
 func templateMemoryMB(tpl *sandboxv1.RuntimeTemplateSpec) int {
 	if tpl != nil && tpl.Resources != nil && !tpl.Resources.Memory.IsZero() {
 		return quantityMB(tpl.Resources.Memory.Value())
@@ -258,22 +450,29 @@ func templateMemoryMB(tpl *sandboxv1.RuntimeTemplateSpec) int {
 	return 0
 }
 
-func templateDiskMB(tpl *sandboxv1.RuntimeTemplateSpec) int64 {
-	if tpl == nil || tpl.Resources == nil || tpl.Resources.Disk.IsZero() {
-		return 0
+func templateMemoryGB(tpl *sandboxv1.RuntimeTemplateSpec) int {
+	if tpl != nil && tpl.Resources != nil && !tpl.Resources.Memory.IsZero() {
+		return quantityGB(tpl.Resources.Memory.Value())
 	}
-	return int64(quantityMB(tpl.Resources.Disk.Value()))
+	return 0
 }
 
-func templateEnv(tpl *sandboxv1.RuntimeTemplateSpec) map[string]string {
+func templateEnv(tpl *sandboxv1.RuntimeTemplateSpec) []openapi.Env {
 	if tpl == nil || len(tpl.Env) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(tpl.Env))
+	out := make([]openapi.Env, 0, len(tpl.Env))
 	for _, item := range tpl.Env {
-		out[item.Name] = item.Value
+		out = append(out, openapi.Env{Key: item.Name, Value: item.Value})
 	}
 	return out
+}
+
+func templateEnvSpec(tpl *sandboxv1.RuntimeTemplateSpec) []sandboxv1.TemplateEnvVar {
+	if tpl == nil {
+		return nil
+	}
+	return tpl.Env
 }
 
 func templateNetwork(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.NetworkConfig {
@@ -285,27 +484,71 @@ func templateNetwork(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.NetworkConfig 
 		PublicNetworkEnable:        in.EnablePublic,
 		PrivateNetworkEnable:       in.EnablePrivate,
 		SharedInternetAccessEnable: in.ChangeDefaultRoute,
-		VPCID:                      in.UserVpcID,
-		SubnetID:                   in.UserSubnetID,
-		SecurityID:                 in.UserSgID,
-		CIDRBlock:                  in.CIDRBlock,
-		AvailabilityZone:           in.AvailabilityZone,
+		VPCConfiguration: &openapi.VPCConfig{
+			VPCID:            in.UserVpcID,
+			SubnetID:         in.UserSubnetID,
+			CIDRBlock:        in.CIDRBlock,
+			AvailabilityZone: in.AvailabilityZone,
+		},
 	}
 }
 
-func templatePoolTargetSize(spec sandboxv1.SandboxTemplateSpec) int {
-	if spec.Pool != nil {
-		return spec.Pool.TargetSize
+func templateNetworkSpec(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.OpenAPINetworkConfig {
+	if tpl == nil {
+		return nil
 	}
+	return tpl.NetworkConfig
+}
+
+func templateSkillSpec(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.SkillConfig {
+	if tpl == nil {
+		return nil
+	}
+	return tpl.SkillConfig
+}
+
+func templatePreheat(spec sandboxv1.SandboxTemplateSpec) *openapi.PreheatConfig {
+	if spec.Pool != nil {
+		return &openapi.PreheatConfig{PreheatEnable: spec.Pool.TargetSize > 0, PreheatNumber: spec.Pool.TargetSize}
+	}
+	return nil
+}
+
+func templatePoolInstanceQuota(spec sandboxv1.SandboxTemplateSpec) int {
 	return 0
 }
 
-func templateMountToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec, creds map[string]*credentials.RuntimeCredential, kind string) *openapi.MountConfig {
+func templateKecConfig(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.KecConfig {
+	systemDiskSizeGB := templateDiskGB(tpl)
+	dataDisks := templateDataDisks(tpl)
+	if systemDiskSizeGB == 0 && len(dataDisks) == 0 {
+		return nil
+	}
+	return &openapi.KecConfig{
+		Enabled:          true,
+		SystemDiskSizeGB: systemDiskSizeGB,
+		DataDisks:        dataDisks,
+	}
+}
+
+func templateVolumes(tpl *sandboxv1.RuntimeTemplateSpec, kind string) []sandboxv1.TemplateVolume {
+	if tpl == nil || len(tpl.Volumes) == 0 {
+		return nil
+	}
+	out := make([]sandboxv1.TemplateVolume, 0, len(tpl.Volumes))
+	for _, volume := range tpl.Volumes {
+		if strings.EqualFold(volume.Type, kind) {
+			out = append(out, volume)
+		}
+	}
+	return out
+}
+
+func templateMountToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec, kind string, creds map[string]*credentials.RuntimeCredential) *openapi.MountConfig {
 	if tpl == nil || len(tpl.Volumes) == 0 {
 		return nil
 	}
 	out := &openapi.MountConfig{}
-	var firstCred *credentials.RuntimeCredential
 	for _, volume := range tpl.Volumes {
 		if !strings.EqualFold(volume.Type, kind) {
 			continue
@@ -316,13 +559,9 @@ func templateMountToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec, creds map[string
 			if volume.KS3 == nil {
 				continue
 			}
-			cred := creds[refName(volume.KS3.CredentialRef)]
-			if firstCred == nil {
-				firstCred = cred
-			}
 			out.MountPoints = append(out.MountPoints, openapi.MountPoint{
 				BucketName:     volume.KS3.Bucket,
-				BucketPath:     volume.KS3.Path,
+				RemotePath:     volume.KS3.Path,
 				LocalMountPath: volume.MountPath,
 				ReadOnly:       volume.ReadOnly,
 			})
@@ -331,47 +570,43 @@ func templateMountToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec, creds map[string
 			if volume.KPFS == nil {
 				continue
 			}
-			cred := creds[refName(volume.KPFS.CredentialRef)]
-			if firstCred == nil {
-				firstCred = cred
-			}
 			point := openapi.MountPoint{
 				FileSystemName: volume.KPFS.FileSystem,
 				RemotePath:     volume.KPFS.Path,
 				LocalMountPath: volume.MountPath,
 				ReadOnly:       volume.ReadOnly,
 			}
-			if cred != nil {
+			if cred := creds[refName(volume.KPFS.CredentialRef)]; cred != nil {
 				point.Token = cred.Token
 			}
-			out.MountPoints = append(out.MountPoints, point)
+			out.KPFSMounts = append(out.KPFSMounts, point)
 		}
 	}
-	if len(out.MountPoints) == 0 {
+	if len(out.MountPoints) == 0 && len(out.KPFSMounts) == 0 {
 		return nil
 	}
-	if firstCred != nil {
-		out.Credential = &openapi.MountCredential{AccessKey: firstCred.AccessKey, SecretAccessKey: firstCred.SecretAccessKey}
-	}
 	return out
+}
+
+func templateMountUpdateToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec, kind string, creds map[string]*credentials.RuntimeCredential) *openapi.MountConfig {
+	out := templateMountToOpenAPI(tpl, kind, creds)
+	if out != nil {
+		return out
+	}
+	switch kind {
+	case "ks3":
+		return &openapi.MountConfig{EnableKS3: false}
+	case "kpfs":
+		return &openapi.MountConfig{EnableKPFS: false}
+	default:
+		return nil
+	}
 }
 
 func templateKlogToOpenAPI(spec sandboxv1.SandboxTemplateSpec, cred *credentials.RuntimeCredential) *openapi.KlogConfig {
 	if spec.Observability != nil && spec.Observability.Logging != nil {
 		logging := spec.Observability.Logging
-		out := &openapi.KlogConfig{
-			Enabled:           logging.Enabled,
-			ProjectName:       logging.ProjectName,
-			KlogEndpoint:      logging.Endpoint,
-			PoolNameContainer: logging.ContainerPoolName,
-			PoolNameHost:      logging.HostPoolName,
-			Rules:             append([]string(nil), logging.Rules...),
-		}
-		if cred != nil {
-			out.AccessKey = cred.AccessKey
-			out.SecretKey = cred.SecretAccessKey
-		}
-		return out
+		return &openapi.KlogConfig{Enabled: logging.Enabled}
 	}
 	return nil
 }
@@ -382,7 +617,7 @@ func templateSkillToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.SkillCo
 	}
 	return &openapi.SkillConfig{
 		Enable:            tpl.SkillConfig.Enable,
-		SpaceID:           strings.Join(tpl.SkillConfig.SpaceIDs, ","),
+		SpaceIDs:          append([]string(nil), tpl.SkillConfig.SpaceIDs...),
 		EnablePublicSkill: tpl.SkillConfig.EnablePublicSkill,
 	}
 }
@@ -394,9 +629,8 @@ func templateDataDisks(tpl *sandboxv1.RuntimeTemplateSpec) []openapi.DataDisk {
 	out := make([]openapi.DataDisk, 0, len(tpl.DataDisks))
 	for _, disk := range tpl.DataDisks {
 		out = append(out, openapi.DataDisk{
-			Name:               disk.Name,
 			Type:               disk.Type,
-			SizeMB:             disk.SizeMB,
+			SizeGB:             (disk.SizeMB + 1023) / 1024,
 			DeleteWithInstance: disk.DeleteWithInstance,
 			Path:               disk.Path,
 		})
@@ -409,18 +643,55 @@ func applyRuntimeSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.
 		obj.Spec.Template = &sandboxv1.RuntimeTemplate{}
 	}
 	tpl := &obj.Spec.Template.Spec
-	tpl.Image = &sandboxv1.TemplateImageSpec{Source: remote.ImageSource, Image: remote.Image}
-	tpl.Resources = &sandboxv1.RuntimeResourceSpec{
-		CPU:    strconv.Itoa(remote.CPU),
-		Memory: *resourceFromMB(remote.Memory),
-		Disk:   *resourceFromMB64(remote.DiskSizeMB),
+	if remote.ImageSource() != "" || remote.ImageURL() != "" {
+		tpl.Image = &sandboxv1.TemplateImageSpec{Source: remote.ImageSource(), Image: remote.ImageURL()}
+	} else {
+		tpl.Image = nil
 	}
-	tpl.Ports = portsFromOpenAPI(remote.Ports)
+	if remote.CPU > 0 || remote.Memory > 0 || remote.DiskSizeMB() > 0 {
+		tpl.Resources = &sandboxv1.RuntimeResourceSpec{}
+		if remote.CPU > 0 {
+			tpl.Resources.CPU = strconv.Itoa(remote.CPU)
+		}
+		if remote.Memory > 0 {
+			tpl.Resources.Memory = *resourceFromGB(remote.Memory)
+		}
+		if remote.DiskSizeMB() > 0 {
+			tpl.Resources.Disk = *resourceFromMB64(remote.DiskSizeMB())
+		}
+	} else {
+		tpl.Resources = nil
+	}
+	if len(remote.Ports) > 0 {
+		tpl.Ports = portsFromOpenAPI(remote.Ports)
+	} else {
+		tpl.Ports = nil
+	}
 	tpl.StartCommand = remote.Command
-	tpl.Env = templateEnvFromMap(remote.Envs)
+	if len(remote.Envs) > 0 {
+		tpl.Env = templateEnvFromOpenAPI(remote.Envs)
+	} else {
+		tpl.Env = nil
+	}
 	tpl.NetworkConfig = networkConfigFromOpenAPI(remote.NetworkConfig)
 	tpl.SkillConfig = skillFromOpenAPI(remote.SkillConfig)
-	tpl.DataDisks = dataDisksFromOpenAPI(remote.DataDisks)
+	if remote.KecConfig != nil && len(remote.KecConfig.DataDisks) > 0 {
+		tpl.DataDisks = dataDisksFromOpenAPI(remote.KecConfig.DataDisks)
+	} else {
+		tpl.DataDisks = nil
+	}
+	tpl.Volumes = volumesFromOpenAPI(remote)
+	if remote.KlogConfig != nil {
+		obj.Spec.Observability = &sandboxv1.ObservabilitySpec{
+			Logging: &sandboxv1.LoggingSpec{
+				Enabled:           remote.KlogConfig.Enabled,
+				ProjectName:       remote.KlogConfig.ProjectName,
+				ContainerPoolName: remote.KlogConfig.PoolName,
+			},
+		}
+	} else {
+		obj.Spec.Observability = nil
+	}
 }
 
 func portsFromOpenAPI(in []int) []sandboxv1.ContainerPortSpec {
@@ -431,10 +702,10 @@ func portsFromOpenAPI(in []int) []sandboxv1.ContainerPortSpec {
 	return out
 }
 
-func templateEnvFromMap(in map[string]string) []sandboxv1.TemplateEnvVar {
+func templateEnvFromOpenAPI(in []openapi.Env) []sandboxv1.TemplateEnvVar {
 	out := make([]sandboxv1.TemplateEnvVar, 0, len(in))
-	for key, value := range in {
-		out = append(out, sandboxv1.TemplateEnvVar{Name: key, Value: value})
+	for _, item := range in {
+		out = append(out, sandboxv1.TemplateEnvVar{Name: item.Key, Value: item.Value})
 	}
 	return out
 }
@@ -443,35 +714,90 @@ func networkConfigFromOpenAPI(in *openapi.NetworkConfig) *sandboxv1.OpenAPINetwo
 	if in == nil {
 		return nil
 	}
-	return &sandboxv1.OpenAPINetworkConfig{
+	out := &sandboxv1.OpenAPINetworkConfig{
 		EnablePublic:       in.PublicNetworkEnable,
 		EnablePrivate:      in.PrivateNetworkEnable,
-		CIDRBlock:          in.CIDRBlock,
 		ChangeDefaultRoute: in.SharedInternetAccessEnable,
-		UserVpcID:          in.VPCID,
-		UserSgID:           in.SecurityID,
-		UserSubnetID:       in.SubnetID,
-		AvailabilityZone:   in.AvailabilityZone,
 	}
+	if in.VPCConfiguration != nil {
+		out.CIDRBlock = in.VPCConfiguration.CIDRBlock
+		out.UserVpcID = in.VPCConfiguration.VPCID
+		out.UserSgID = in.VPCConfiguration.SecurityGroupID
+		out.UserSubnetID = in.VPCConfiguration.SubnetID
+		out.AvailabilityZone = in.VPCConfiguration.AvailabilityZone
+	}
+	return out
 }
 
 func skillFromOpenAPI(in *openapi.SkillConfig) *sandboxv1.SkillConfig {
 	if in == nil {
 		return nil
 	}
-	var spaces []string
-	if in.SpaceID != "" {
-		spaces = strings.Split(in.SpaceID, ",")
-	}
-	return &sandboxv1.SkillConfig{Enable: in.Enable, SpaceIDs: spaces, EnablePublicSkill: in.EnablePublicSkill}
+	return &sandboxv1.SkillConfig{Enable: in.Enable, SpaceIDs: append([]string(nil), in.SpaceIDs...), EnablePublicSkill: in.EnablePublicSkill}
 }
 
 func dataDisksFromOpenAPI(in []openapi.DataDisk) []sandboxv1.DataDiskSpec {
 	out := make([]sandboxv1.DataDiskSpec, 0, len(in))
 	for _, disk := range in {
-		out = append(out, sandboxv1.DataDiskSpec{Name: disk.Name, Type: disk.Type, SizeMB: disk.SizeMB, DeleteWithInstance: disk.DeleteWithInstance, Path: disk.Path})
+		out = append(out, sandboxv1.DataDiskSpec{Type: disk.Type, SizeMB: disk.SizeGB * 1024, DeleteWithInstance: disk.DeleteWithInstance, Path: disk.Path})
 	}
 	return out
+}
+
+func volumesFromOpenAPI(remote openapi.Template) []sandboxv1.TemplateVolume {
+	var out []sandboxv1.TemplateVolume
+	if remote.KS3MountConfig != nil {
+		for i, point := range remote.KS3MountConfig.Points() {
+			out = append(out, sandboxv1.TemplateVolume{
+				Name:      volumeName("ks3", point.BucketName, i),
+				Type:      "KS3",
+				MountPath: point.LocalMountPath,
+				ReadOnly:  point.ReadOnly,
+				KS3: &sandboxv1.KS3VolumeSource{
+					Bucket: point.BucketName,
+					Path:   point.RemotePath,
+				},
+			})
+		}
+	}
+	if remote.KPFSMountConfig != nil {
+		for i, point := range remote.KPFSMountConfig.Points() {
+			out = append(out, sandboxv1.TemplateVolume{
+				Name:      volumeName("kpfs", point.FileSystemName, i),
+				Type:      "KPFS",
+				MountPath: point.LocalMountPath,
+				ReadOnly:  point.ReadOnly,
+				KPFS: &sandboxv1.KPFSVolumeSource{
+					FileSystem: point.FileSystemName,
+					Path:       point.RemotePath,
+				},
+			})
+		}
+	}
+	return out
+}
+
+func volumeName(prefix, value string, index int) string {
+	value = strings.Trim(strings.ToLower(value), "-.")
+	if value == "" {
+		return prefix + "-" + strconv.Itoa(index)
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		out = strconv.Itoa(index)
+	}
+	return prefix + "-" + out
 }
 
 func registryServer(in *credentials.RegistryCredential) string {
@@ -495,6 +821,66 @@ func registryPassword(in *credentials.RegistryCredential) string {
 	return in.Password
 }
 
+func storageAccessKey(runtime RuntimeCredentials) string {
+	if runtime.KS3 != nil && runtime.KS3.AccessKey != "" {
+		return runtime.KS3.AccessKey
+	}
+	if runtime.KPFS != nil && runtime.KPFS.AccessKey != "" {
+		return runtime.KPFS.AccessKey
+	}
+	for _, cred := range runtime.KS3ByName {
+		if cred != nil && cred.AccessKey != "" {
+			return cred.AccessKey
+		}
+	}
+	for _, cred := range runtime.KPFSByName {
+		if cred != nil && cred.AccessKey != "" {
+			return cred.AccessKey
+		}
+	}
+	return ""
+}
+
+func storageSecretAccessKey(runtime RuntimeCredentials) string {
+	if runtime.KS3 != nil && runtime.KS3.SecretAccessKey != "" {
+		return runtime.KS3.SecretAccessKey
+	}
+	if runtime.KPFS != nil && runtime.KPFS.SecretAccessKey != "" {
+		return runtime.KPFS.SecretAccessKey
+	}
+	for _, cred := range runtime.KS3ByName {
+		if cred != nil && cred.SecretAccessKey != "" {
+			return cred.SecretAccessKey
+		}
+	}
+	for _, cred := range runtime.KPFSByName {
+		if cred != nil && cred.SecretAccessKey != "" {
+			return cred.SecretAccessKey
+		}
+	}
+	return ""
+}
+
+func sandboxStorageAccessKey(runtime RuntimeCredentials) string {
+	if runtime.KS3 != nil && runtime.KS3.AccessKey != "" {
+		return runtime.KS3.AccessKey
+	}
+	if runtime.KPFS != nil {
+		return runtime.KPFS.AccessKey
+	}
+	return ""
+}
+
+func sandboxStorageSecretAccessKey(runtime RuntimeCredentials) string {
+	if runtime.KS3 != nil && runtime.KS3.SecretAccessKey != "" {
+		return runtime.KS3.SecretAccessKey
+	}
+	if runtime.KPFS != nil {
+		return runtime.KPFS.SecretAccessKey
+	}
+	return ""
+}
+
 func refName(ref *sandboxv1.LocalObjectReference) string {
 	if ref == nil {
 		return ""
@@ -509,8 +895,20 @@ func quantityMB(bytes int64) int {
 	return int((bytes + 1024*1024 - 1) / (1024 * 1024))
 }
 
+func quantityGB(bytes int64) int {
+	if bytes <= 0 {
+		return 0
+	}
+	return int((bytes + 1024*1024*1024 - 1) / (1024 * 1024 * 1024))
+}
+
 func resourceFromMB(value int) *resource.Quantity {
 	return resourceFromMB64(int64(value))
+}
+
+func resourceFromGB(value int) *resource.Quantity {
+	q := resource.NewQuantity(int64(value)*1024*1024*1024, resource.BinarySI)
+	return q
 }
 
 func resourceFromMB64(value int64) *resource.Quantity {
@@ -521,9 +919,9 @@ func resourceFromMB64(value int64) *resource.Quantity {
 func templateAccess(value string) string {
 	switch strings.ToLower(value) {
 	case "private":
-		return "private"
+		return "Private"
 	case "public":
-		return "public"
+		return "Public"
 	default:
 		return value
 	}
@@ -546,33 +944,42 @@ func templateType(value string) string {
 		return "custom"
 	case "browser":
 		return "browser"
-	case "code":
+	case "code", "codeinterpreter":
 		return "code"
-	case "aio":
+	case "aio", "all-in-one", "allinone":
 		return "AIO"
 	default:
 		return value
 	}
 }
 
-func mountToOpenAPI(in *sandboxv1.MountConfig, cred *credentials.RuntimeCredential, kind string) *openapi.MountConfig {
+func displayTemplateType(value string) string {
+	switch strings.ToLower(value) {
+	case "aio", "all-in-one", "allinone":
+		return "AIO"
+	case "browser":
+		return "BROWSER"
+	case "code", "codeinterpreter":
+		return "CODE"
+	case "custom":
+		return "CUSTOM"
+	default:
+		return strings.ToUpper(value)
+	}
+}
+
+func mountToOpenAPI(in *sandboxv1.MountConfig, kind string) *openapi.MountConfig {
 	if in == nil {
 		return nil
 	}
-	out := &openapi.MountConfig{
-		MountPoints: mountPointsToOpenAPI(in.MountPoints),
-	}
+	out := &openapi.MountConfig{}
 	switch kind {
 	case "ks3":
 		out.EnableKS3 = in.Enabled
+		out.MountPoints = mountPointsToOpenAPI(in.MountPoints)
 	case "kpfs":
 		out.EnableKPFS = in.Enabled
-	}
-	if cred != nil {
-		out.Credential = &openapi.MountCredential{
-			AccessKey:       cred.AccessKey,
-			SecretAccessKey: cred.SecretAccessKey,
-		}
+		out.KPFSMounts = mountPointsToOpenAPI(in.MountPoints)
 	}
 	return out
 }
@@ -582,7 +989,6 @@ func mountPointsToOpenAPI(in []sandboxv1.MountPoint) []openapi.MountPoint {
 	for _, item := range in {
 		out = append(out, openapi.MountPoint{
 			BucketName:     item.BucketName,
-			BucketPath:     item.RemotePath,
 			FileSystemName: item.FileSystemName,
 			RemotePath:     item.RemotePath,
 			LocalMountPath: item.LocalMountPath,
@@ -592,13 +998,13 @@ func mountPointsToOpenAPI(in []sandboxv1.MountPoint) []openapi.MountPoint {
 	return out
 }
 
-func envsToMap(in []sandboxv1.EnvVar) map[string]string {
+func envsToOpenAPI(in []sandboxv1.EnvVar) []openapi.Env {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make(map[string]string, len(in))
+	out := make([]openapi.Env, 0, len(in))
 	for _, item := range in {
-		out[item.Key] = item.Value
+		out = append(out, openapi.Env{Key: item.Key, Value: item.Value})
 	}
 	return out
 }

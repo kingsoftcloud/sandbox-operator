@@ -95,7 +95,6 @@ spec:
         - "/home/user/*.log"
       credentialRef:
         name: klog-credential
-  deletionPolicy: Delete
 ---
 apiVersion: sandbox.kce.ksyun.com/v1alpha1
 kind: Sandbox
@@ -107,7 +106,6 @@ spec:
   templateRef:
     name: custom-app
   timeoutSeconds: 1800
-  deletionPolicy: Delete
 ---
 apiVersion: sandbox.kce.ksyun.com/v1alpha1
 kind: SandboxClaim
@@ -119,4 +117,3 @@ spec:
   templateRef:
     name: custom-app
   timeoutSeconds: 1800
-  deletionPolicy: Delete

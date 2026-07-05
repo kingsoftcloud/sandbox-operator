@@ -58,6 +58,11 @@ EOF
 }
 
 patch_webhook_ca_bundle() {
+  kubectl patch mutatingwebhookconfiguration sandbox-operator-mutating-webhook --type=json -p "[
+    {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+    {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+    {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
+  ]"
   kubectl patch validatingwebhookconfiguration sandbox-operator-validating-webhook --type=json -p "[
     {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
     {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},

@@ -1,5 +1,7 @@
 package openapi
 
+import "strings"
+
 type Credential struct {
 	AccessKeyID     string
 	SecretAccessKey string
@@ -7,103 +9,170 @@ type Credential struct {
 	Region          string
 }
 
+type Env struct {
+	Key   string `json:"Key,omitempty"`
+	Value string `json:"Value,omitempty"`
+}
+
 type Template struct {
-	ID                           string            `json:"id"`
-	TemplateID                   string            `json:"templateID,omitempty"`
-	TemplateName                 string            `json:"name"`
-	Description                  string            `json:"description"`
-	TemplateCategory             string            `json:"access"`
-	TemplateType                 string            `json:"type"`
-	Image                        string            `json:"image"`
-	ImageSource                  string            `json:"imageSource"`
-	CredentialServer             string            `json:"credentialServer"`
-	CredentialUsername           string            `json:"credentialUname"`
-	CredentialPassword           string            `json:"credentialPwd"`
-	Command                      string            `json:"startCmd"`
-	Ports                        []int             `json:"ports"`
-	CPU                          int               `json:"cpuCount"`
-	Memory                       int               `json:"memoryMB"`
-	DiskSizeMB                   int64             `json:"diskSizeMB,omitempty"`
-	Envs                         map[string]string `json:"envs"`
-	NetworkConfig                *NetworkConfig    `json:"networkConfig"`
-	TargetPoolSize               int               `json:"targetPoolSize"`
-	InstanceQuota                int               `json:"quota"`
-	Status                       string            `json:"status"`
-	CanDelete                    bool              `json:"canDelete"`
-	CreatedAt                    string            `json:"createdAt"`
-	UpdatedAt                    string            `json:"updatedAt"`
-	KlogProjectName              string            `json:"-"`
-	KlogPoolName                 string            `json:"-"`
-	RemainingInstanceQuota       int               `json:"remainingInstanceQuota"`
-	RemainingSystemInstanceQuota int               `json:"remainingSystemInstanceQuota"`
-	PreheatedInstanceNumber      int               `json:"preheatedInstanceNumber"`
-	KS3MountConfig               *MountConfig      `json:"ks3MountConfig"`
-	KPFSMountConfig              *MountConfig      `json:"kpfsMountConfig"`
-	KlogConfig                   *KlogConfig       `json:"klogConfig"`
-	SkillConfig                  *SkillConfig      `json:"skillConfig,omitempty"`
-	DataDisks                    []DataDisk        `json:"dataDisks,omitempty"`
-	CredentialAccessKeyIDMasked  string            `json:"credentialAccessKeyIDMasked"`
+	TemplateID                   string               `json:"TemplateId,omitempty"`
+	TemplateName                 string               `json:"TemplateName,omitempty"`
+	Description                  string               `json:"Description,omitempty"`
+	TemplateCategory             string               `json:"TemplateCategory,omitempty"`
+	TemplateType                 string               `json:"TemplateType,omitempty"`
+	CPU                          int                  `json:"Cpu,omitempty"`
+	Memory                       int                  `json:"Memory,omitempty"`
+	Envs                         []Env                `json:"Envs,omitempty"`
+	KS3MountConfig               *MountConfig         `json:"Ks3MountConfig,omitempty"`
+	KPFSMountConfig              *MountConfig         `json:"KpfsMountConfig,omitempty"`
+	Command                      string               `json:"Command,omitempty"`
+	Ports                        []int                `json:"Ports,omitempty"`
+	KecConfig                    *KecConfig           `json:"KecConfig,omitempty"`
+	PreheatConfig                *PreheatConfig       `json:"PreheatConfig,omitempty"`
+	CanDelete                    bool                 `json:"CanDelete,omitempty"`
+	Status                       string               `json:"Status,omitempty"`
+	CreatedAt                    string               `json:"CreatedAt,omitempty"`
+	UpdatedAt                    string               `json:"UpdatedAt,omitempty"`
+	KlogConfig                   *KlogConfig          `json:"KlogConfig,omitempty"`
+	NetworkConfig                *NetworkConfig       `json:"NetworkConfig,omitempty"`
+	ImageConfig                  *ImageConfig         `json:"ImageConfig,omitempty"`
+	SkillConfig                  *SkillConfig         `json:"SkillConfig,omitempty"`
+	AccessKey                    string               `json:"AccessKey,omitempty"`
+	InstanceQuota                int                  `json:"InstanceQuota,omitempty"`
+	RemainingInstanceQuota       int                  `json:"RemainingInstanceQuota,omitempty"`
+	RemainingSystemInstanceQuota int                  `json:"RemainingSystemInstanceQuota,omitempty"`
+	DiskSizeGB                   int64                `json:"DiskSize,omitempty"`
+	CredentialAccessKeyIDMasked  string               `json:"CredentialAccessKeyIDMasked,omitempty"`
+	CustomConfiguration          *CustomConfiguration `json:"CustomConfiguration,omitempty"`
 }
 
 func (t Template) Identifier() string {
-	if t.ID != "" {
-		return t.ID
-	}
 	return t.TemplateID
 }
 
+func (t Template) ImageURL() string {
+	if t.ImageConfig == nil {
+		return ""
+	}
+	if t.ImageConfig.ImageTag == "" || strings.Contains(t.ImageConfig.ImageURL, ":") {
+		return t.ImageConfig.ImageURL
+	}
+	return t.ImageConfig.ImageURL + ":" + t.ImageConfig.ImageTag
+}
+
+func (t Template) ImageSource() string {
+	if t.ImageConfig == nil {
+		return ""
+	}
+	return t.ImageConfig.ImageSource
+}
+
+func (t Template) TargetPoolSize() int {
+	if t.PreheatConfig == nil || !t.PreheatConfig.PreheatEnable {
+		return 0
+	}
+	return t.PreheatConfig.PreheatNumber
+}
+
+func (t Template) PreheatedInstanceNumber() int {
+	if t.PreheatConfig == nil {
+		return 0
+	}
+	return t.PreheatConfig.PreheatedInstanceNumber
+}
+
+func (t Template) DiskSizeMB() int64 {
+	if t.KecConfig != nil && t.KecConfig.SystemDiskSizeGB > 0 {
+		return t.KecConfig.SystemDiskSizeGB * 1024
+	}
+	if t.DiskSizeGB > 0 {
+		return t.DiskSizeGB * 1024
+	}
+	return 0
+}
+
 type Sandbox struct {
-	SandboxID           string `json:"sandboxID"`
-	TemplateID          string `json:"templateID"`
-	TemplateType        string `json:"templateType"`
-	TemplateCategory    string `json:"templateCategory"`
-	Status              string `json:"state"`
-	Timeout             int    `json:"timeout"`
-	CreateTime          string `json:"startedAt"`
-	EndTime             string `json:"endAt"`
-	Endpoint            string `json:"domain"`
-	URLs                *URLs  `json:"urls"`
-	EnvdAccessToken     string `json:"envdAccessToken"`
-	CustomConfiguration *CustomConfiguration
+	InstanceID          string               `json:"InstanceId,omitempty"`
+	SandboxName         string               `json:"SandboxName,omitempty"`
+	Alias               string               `json:"Alias,omitempty"`
+	TemplateID          string               `json:"TemplateId,omitempty"`
+	TemplateType        string               `json:"TemplateType,omitempty"`
+	TemplateCategory    string               `json:"TemplateCategory,omitempty"`
+	Status              string               `json:"Status,omitempty"`
+	Timeout             int                  `json:"Timeout,omitempty"`
+	CreateTime          string               `json:"CreateTime,omitempty"`
+	EndTime             string               `json:"EndTime,omitempty"`
+	Endpoint            string               `json:"Endpoint,omitempty"`
+	AccessURL           *URLs                `json:"AccessUrl,omitempty"`
+	ContainerID         string               `json:"ContainerId,omitempty"`
+	CustomConfiguration *CustomConfiguration `json:"CustomConfiguration,omitempty"`
+	Envs                []Env                `json:"Envs,omitempty"`
+	KS3MountConfig      *MountConfig         `json:"Ks3MountConfig,omitempty"`
+	KPFSMountConfig     *MountConfig         `json:"KpfsMountConfig,omitempty"`
+	EnvdAccessToken     string               `json:"Token,omitempty"`
+}
+
+func (s Sandbox) Identifier() string {
+	return s.InstanceID
+}
+
+func (s Sandbox) Name() string {
+	if s.SandboxName != "" {
+		return s.SandboxName
+	}
+	return s.Alias
+}
+
+func (s Sandbox) TemplateIdentifier() string {
+	return s.TemplateID
 }
 
 type NetworkConfig struct {
-	PublicNetworkEnable        bool   `json:"enablePublic"`
-	PrivateNetworkEnable       bool   `json:"enablePrivate"`
-	SharedInternetAccessEnable bool   `json:"changeDefaultRoute"`
-	VPCID                      string `json:"userVpcId"`
-	SubnetID                   string `json:"userSubnetId"`
-	SecurityID                 string `json:"userSgId"`
-	CIDRBlock                  string `json:"cidrBlock"`
-	AvailabilityZone           string `json:"availabilityZone,omitempty"`
+	PublicNetworkEnable        bool       `json:"PublicNetworkEnable,omitempty"`
+	PrivateNetworkEnable       bool       `json:"PrivateNetworkEnable,omitempty"`
+	SharedInternetAccessEnable bool       `json:"SharedInternetAccessEnable,omitempty"`
+	VPCConfiguration           *VPCConfig `json:"VpcConfiguration,omitempty"`
+}
+
+type VPCConfig struct {
+	VPCID            string `json:"VpcId,omitempty"`
+	SubnetID         string `json:"SubnetId,omitempty"`
+	SecurityGroupID  string `json:"SecurityGroupId,omitempty"`
+	CIDRBlock        string `json:"-"`
+	AvailabilityZone string `json:"-"`
 }
 
 type MountConfig struct {
-	EnableKS3   bool             `json:"enableKs3,omitempty"`
-	EnableKPFS  bool             `json:"enableKpfs,omitempty"`
-	Credential  *MountCredential `json:"credentials,omitempty"`
-	MountPoints []MountPoint     `json:"mountPoints,omitempty"`
+	EnableKS3   bool         `json:"Ks3Enable,omitempty"`
+	EnableKPFS  bool         `json:"KpfsEnable,omitempty"`
+	MountPoints []MountPoint `json:"Ks3MountPoints,omitempty"`
+	KPFSMounts  []MountPoint `json:"KpfsMountPoints,omitempty"`
+	ReadOnly    bool         `json:"ReadOnly,omitempty"`
 }
 
-type MountCredential struct {
-	AccessKey       string `json:"accessKey,omitempty"`
-	SecretAccessKey string `json:"secretAccessKey,omitempty"`
+func (m *MountConfig) Points() []MountPoint {
+	if m == nil {
+		return nil
+	}
+	if len(m.MountPoints) > 0 {
+		return m.MountPoints
+	}
+	return m.KPFSMounts
 }
 
 type MountPoint struct {
-	BucketName     string `json:"bucketName,omitempty"`
-	BucketPath     string `json:"bucketPath,omitempty"`
-	FileSystemName string `json:"fileSystemName,omitempty"`
-	RemotePath     string `json:"remotePath,omitempty"`
-	LocalMountPath string `json:"localMountPath,omitempty"`
-	ReadOnly       bool   `json:"readOnly,omitempty"`
-	Token          string `json:"token,omitempty"`
+	BucketName     string `json:"BucketName,omitempty"`
+	FileSystemName string `json:"FileSystemName,omitempty"`
+	RemotePath     string `json:"RemotePath,omitempty"`
+	LocalMountPath string `json:"LocalMountPath,omitempty"`
+	ReadOnly       bool   `json:"ReadOnly,omitempty"`
+	Token          string `json:"-"`
 }
 
 type CustomConfiguration struct {
-	ImageURL string `json:"imageUrl"`
-	Port     int    `json:"port"`
-	Command  string `json:"startCmd"`
+	ImageURL string `json:"ImageUrl,omitempty"`
+	Port     int    `json:"Port,omitempty"`
+	Command  string `json:"Command,omitempty"`
 }
 
 type URLs struct {
@@ -116,105 +185,161 @@ type URLs struct {
 }
 
 type KlogConfig struct {
-	Enabled           bool     `json:"enable"`
-	AccessKey         string   `json:"accessKey,omitempty"`
-	SecretKey         string   `json:"secretKey,omitempty"`
-	ProjectName       string   `json:"projectName,omitempty"`
-	KlogEndpoint      string   `json:"klogEndpoint,omitempty"`
-	PoolNameContainer string   `json:"poolNameContainer,omitempty"`
-	PoolNameHost      string   `json:"poolNameHost,omitempty"`
-	Rules             []string `json:"rules,omitempty"`
+	Enabled     bool   `json:"KlogEnable,omitempty"`
+	ProjectName string `json:"KlogProjectName,omitempty"`
+	PoolName    string `json:"KlogPoolName,omitempty"`
 }
 
 type SkillConfig struct {
-	Enable            bool   `json:"enable,omitempty"`
-	SpaceID           string `json:"spaceId,omitempty"`
-	EnablePublicSkill bool   `json:"enablePublicSkill,omitempty"`
+	Enable            bool     `json:"SkillEnable,omitempty"`
+	SpaceIDs          []string `json:"SkillSpaceIds,omitempty"`
+	EnablePublicSkill bool     `json:"PublicSkillEnable,omitempty"`
 }
 
 type DataDisk struct {
-	Name               string `json:"name,omitempty"`
-	Type               string `json:"type,omitempty"`
-	SizeMB             int64  `json:"sizeMB,omitempty"`
-	DeleteWithInstance bool   `json:"deleteWithInstance,omitempty"`
-	Path               string `json:"path,omitempty"`
+	Type               string `json:"Type,omitempty"`
+	SizeGB             int64  `json:"Size,omitempty"`
+	DeleteWithInstance bool   `json:"DeleteWithInstance,omitempty"`
+	Path               string `json:"Path,omitempty"`
+}
+
+type ImageConfig struct {
+	ImageSource        string `json:"ImageSource,omitempty"`
+	ImageEndpoint      string `json:"ImageEndpoint,omitempty"`
+	ImageNamespace     string `json:"ImageNamespace,omitempty"`
+	ImageName          string `json:"ImageName,omitempty"`
+	CredentialUsername string `json:"CredentialUsername,omitempty"`
+	CredentialPassword string `json:"CredentialPwd,omitempty"`
+	ImageURL           string `json:"ImageUrl,omitempty"`
+	ImageTag           string `json:"ImageTag,omitempty"`
+	RegistryInstanceID string `json:"RegistryInstanceId,omitempty"`
+}
+
+type KecConfig struct {
+	Enabled          bool       `json:"KecEnable,omitempty"`
+	InstanceType     string     `json:"InstanceType,omitempty"`
+	SystemDiskType   string     `json:"SystemDiskType,omitempty"`
+	SystemDiskSizeGB int64      `json:"SystemDiskSize,omitempty"`
+	DataDisks        []DataDisk `json:"DataDisks,omitempty"`
+}
+
+type PreheatConfig struct {
+	PreheatEnable           bool `json:"PreheatEnable,omitempty"`
+	PreheatNumber           int  `json:"PreheatNumber,omitempty"`
+	PreheatedInstanceNumber int  `json:"PreheatedInstanceNumber,omitempty"`
 }
 
 type CreateTemplateRequest struct {
-	TemplateName          string            `json:"name,omitempty"`
-	Alias                 string            `json:"alias,omitempty"`
-	Description           string            `json:"description,omitempty"`
-	TemplateCategory      string            `json:"access,omitempty"`
-	IsPublic              *bool             `json:"isPublic,omitempty"`
-	TemplateType          string            `json:"type,omitempty"`
-	Image                 string            `json:"image,omitempty"`
-	CredentialServer      string            `json:"credentialServer,omitempty"`
-	CredentialUsername    string            `json:"credentialUname,omitempty"`
-	CredentialPassword    string            `json:"credentialPwd,omitempty"`
-	ImageSource           string            `json:"imageSource,omitempty"`
-	Command               string            `json:"startCmd,omitempty"`
-	Ports                 []int             `json:"ports,omitempty"`
-	CPU                   int               `json:"cpuCount,omitempty"`
-	Memory                int               `json:"memoryMB,omitempty"`
-	DiskSizeMB            int64             `json:"diskSizeMB,omitempty"`
-	Envs                  map[string]string `json:"envs,omitempty"`
-	NetworkConfig         *NetworkConfig    `json:"networkConfig,omitempty"`
-	TargetPoolSize        int               `json:"targetPoolSize,omitempty"`
-	InstanceQuota         int               `json:"quota,omitempty"`
-	WarmPoolImagePullOnly *bool             `json:"warmPoolImagePullOnly,omitempty"`
-	KS3MountConfig        *MountConfig      `json:"ks3MountConfig,omitempty"`
-	KPFSMountConfig       *MountConfig      `json:"kpfsMountConfig,omitempty"`
-	KlogConfig            *KlogConfig       `json:"klogConfig,omitempty"`
-	SkillConfig           *SkillConfig      `json:"skillConfig,omitempty"`
-	DataDisks             []DataDisk        `json:"dataDisks,omitempty"`
+	TemplateName     string         `json:"TemplateName,omitempty"`
+	Description      string         `json:"Description,omitempty"`
+	TemplateCategory string         `json:"TemplateCategory,omitempty"`
+	TemplateType     string         `json:"TemplateType,omitempty"`
+	ImageConfig      *ImageConfig   `json:"ImageConfig,omitempty"`
+	Ports            []int          `json:"Ports,omitempty"`
+	Command          string         `json:"Command,omitempty"`
+	KecConfig        *KecConfig     `json:"KecConfig,omitempty"`
+	CPU              int            `json:"Cpu,omitempty"`
+	Memory           int            `json:"Memory,omitempty"`
+	Envs             []Env          `json:"Envs,omitempty"`
+	SkillConfig      *SkillConfig   `json:"SkillConfig,omitempty"`
+	NetworkConfig    *NetworkConfig `json:"NetworkConfig,omitempty"`
+	KlogConfig       *KlogConfig    `json:"KlogConfig,omitempty"`
+	KPFSMountConfig  *MountConfig   `json:"KpfsMountConfig,omitempty"`
+	KS3MountConfig   *MountConfig   `json:"Ks3MountConfig,omitempty"`
+	AccessKey        string         `json:"AccessKey,omitempty"`
+	SecretAccessKey  string         `json:"SecretAccessKey,omitempty"`
+	PreheatConfig    *PreheatConfig `json:"PreheatConfig,omitempty"`
+	InstanceQuota    int            `json:"InstanceQuota,omitempty"`
 }
 
 type CreateTemplateResponse struct {
-	TemplateID      string `json:"templateID"`
-	KlogProjectName string `json:"klogProjectName"`
-	KlogPoolName    string `json:"poolNameContainer"`
+	TemplateID      string `json:"TemplateId,omitempty"`
+	KlogProjectName string `json:"KlogProjectName,omitempty"`
+	KlogPoolName    string `json:"KlogPoolName,omitempty"`
+}
+
+func (r CreateTemplateResponse) Identifier() string {
+	return r.TemplateID
 }
 
 type UpdateTemplateRequest struct {
-	TemplateID string `json:"templateID,omitempty"`
+	TemplateID string `json:"TemplateId,omitempty"`
 	CreateTemplateRequest
 }
 
 type StartSandboxRequest struct {
-	TemplateID          string                 `json:"templateID"`
-	Timeout             int                    `json:"timeout,omitempty"`
-	AllowInternetAccess *bool                  `json:"allowInternetAccess,omitempty"`
-	EnvVars             map[string]string      `json:"envVars,omitempty"`
-	Metadata            map[string]interface{} `json:"metadata,omitempty"`
+	TemplateID      string       `json:"TemplateId"`
+	Timeout         int          `json:"Timeout,omitempty"`
+	KS3MountConfig  *MountConfig `json:"Ks3MountConfig,omitempty"`
+	KPFSMountConfig *MountConfig `json:"KpfsMountConfig,omitempty"`
+	AccessKey       string       `json:"AccessKey,omitempty"`
+	SecretAccessKey string       `json:"SecretAccessKey,omitempty"`
+	Envs            []Env        `json:"Envs,omitempty"`
 }
 
 type StartSandboxResponse struct {
-	SandboxID          string `json:"sandboxID"`
-	Endpoint           string `json:"domain"`
-	TemplateID         string `json:"templateID"`
-	Token              string `json:"envdAccessToken"`
-	TrafficAccessToken string `json:"trafficAccessToken"`
-	Timeout            int    `json:"timeout"`
+	InstanceID string `json:"InstanceId,omitempty"`
+	Endpoint   string `json:"Endpoint,omitempty"`
+	TemplateID string `json:"TemplateId,omitempty"`
+	Token      string `json:"Token,omitempty"`
+	Timeout    int    `json:"Timeout,omitempty"`
+}
+
+func (r StartSandboxResponse) Identifier() string {
+	return r.InstanceID
+}
+
+func (r StartSandboxResponse) TemplateIdentifier() string {
+	return r.TemplateID
+}
+
+type UpdateSandboxRequest struct {
+	InstanceID string `json:"InstanceId,omitempty"`
+	Timeout    int    `json:"Timeout,omitempty"`
 }
 
 type ListTemplatesRequest struct {
-	PageNum  int `json:"page"`
-	PageSize int `json:"pageSize"`
+	TemplateName string `json:"TemplateName,omitempty"`
+	TemplateType string `json:"TemplateType,omitempty"`
+	Status       string `json:"Status,omitempty"`
+	PageNum      int    `json:"PageNum,omitempty"`
+	PageSize     int    `json:"PageSize,omitempty"`
 }
 
 type ListSandboxesRequest struct {
-	PageNum  int `json:"page"`
-	PageSize int `json:"pageSize"`
+	TemplateID   string `json:"TemplateId,omitempty"`
+	TemplateName string `json:"TemplateName,omitempty"`
+	State        string `json:"State,omitempty"`
+	PageNum      int    `json:"PageNum,omitempty"`
+	PageSize     int    `json:"PageSize,omitempty"`
 }
 
 type TemplateList struct {
-	Items     []Template `json:"templates"`
-	NextToken string     `json:"nextToken"`
-	Total     int        `json:"totalCount"`
+	Items    []Template `json:"Templates,omitempty"`
+	Total    int        `json:"TotalCount,omitempty"`
+	PageNum  int        `json:"PageNum,omitempty"`
+	PageSize int        `json:"PageSize,omitempty"`
 }
 
 type SandboxList struct {
-	Items     []Sandbox `json:"sandboxes"`
-	NextToken string    `json:"nextToken"`
-	Total     int       `json:"totalCount"`
+	Items    []Sandbox `json:"InstanceSet,omitempty"`
+	Total    int       `json:"TotalCount,omitempty"`
+	PageNum  int       `json:"PageNum,omitempty"`
+	PageSize int       `json:"PageSize,omitempty"`
+}
+
+type TemplateResponse struct {
+	Template
+}
+
+func (r TemplateResponse) Value() Template {
+	return r.Template
+}
+
+type SandboxResponse struct {
+	Sandbox
+}
+
+func (r SandboxResponse) Value() Sandbox {
+	return r.Sandbox
 }
