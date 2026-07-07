@@ -1,15 +1,15 @@
-# 原生 Kubernetes 部署资源
+# Raw Kubernetes Deployment Resources
 
-本目录包含不依赖 Helm 的 operator 部署资源：
+This directory contains operator deployment resources that do not depend on Helm:
 
-- `00-namespace.yaml`：operator 命名空间。
-- `01-crd.yaml`：`SandboxTemplate`、`Sandbox`、`SandboxClaim` CRD。
-- `02-rbac.yaml`：ServiceAccount、ClusterRole、ClusterRoleBinding。
-- `03-config.yaml`：operator 配置 ConfigMap。
-- `04-manager.yaml`：operator Deployment。
-- `05-webhook.yaml`：webhook Service、MutatingWebhookConfiguration、ValidatingWebhookConfiguration。
+- `00-namespace.yaml`: operator namespace.
+- `01-crd.yaml`: `SandboxTemplate`, `Sandbox`, and `SandboxClaim` CRDs.
+- `02-rbac.yaml`: ServiceAccount, ClusterRole, and ClusterRoleBinding.
+- `03-config.yaml`: operator configuration ConfigMap.
+- `04-manager.yaml`: operator Deployment.
+- `05-webhook.yaml`: webhook Service, MutatingWebhookConfiguration, and ValidatingWebhookConfiguration.
 
-## 应用顺序
+## Apply Order
 
 ```bash
 kubectl apply -f 00-namespace.yaml
@@ -17,51 +17,51 @@ kubectl apply -f 01-crd.yaml
 kubectl apply -f 02-rbac.yaml
 kubectl apply -f 03-config.yaml
 
-# webhook TLS Secret 和 caBundle 由 scripts/deploy.sh 自动生成和 patch。
+# The webhook TLS Secret and caBundle are generated/patched automatically by scripts/deploy.sh.
 
 kubectl apply -f 04-manager.yaml
 kubectl apply -f 05-webhook.yaml
 ```
 
-推荐直接使用脚本：
+It is recommended to use the provided scripts instead:
 
 ```bash
 ./scripts/build-image.sh sandbox-operator:latest
 IMAGE=sandbox-operator:latest ./scripts/deploy.sh
 ```
 
-卸载：
+Uninstall:
 
 ```bash
 ./scripts/undeploy.sh
 ```
 
-## Webhook 证书
+## Webhook Certificates
 
-原生 manifest 部署不依赖 cert-manager。`scripts/deploy.sh` 会：
+Raw manifest deployment does not require cert-manager. `scripts/deploy.sh`:
 
-1. 使用 `openssl` 生成自签 CA 和 serving certificate。
-2. 将 serving certificate 写入 `sandbox-operator-webhook-server-cert` Secret。
-3. 将 CA bundle 写入 MutatingWebhookConfiguration 和 ValidatingWebhookConfiguration。
+1. Generates a self-signed CA and serving certificate with `openssl`.
+2. Writes the serving certificate into the `sandbox-operator-webhook-server-cert` Secret.
+3. Patches the CA bundle into the MutatingWebhookConfiguration and ValidatingWebhookConfiguration.
 
-如果手工替换 webhook 证书，需要重新 patch webhook caBundle。
+If you replace the webhook certificate manually, you must patch the webhook `caBundle` again.
 
-## 配置
+## Configuration
 
-`03-config.yaml` 中包含默认 OpenAPI 配置：
+`03-config.yaml` contains the default OpenAPI configuration:
 
 - `OPENAPI_AUTH_MODE=kop-sigv4`
 - `OPENAPI_SERVICE=aicp`
 - `OPENAPI_VERSION=2026-04-01`
 - `DEFAULT_OPENAPI_CREDENTIAL_SECRET=sandbox-openapi-credentials`
 
-业务命名空间仍需创建 OpenAPI AK/SK Secret。示例见：
+Business namespaces still need an OpenAPI AK/SK Secret. See the example in:
 
 ```text
 config/credentials/credentials.example.yaml
 ```
 
-## Helm 部署
+## Helm Deployment
 
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \
@@ -71,7 +71,7 @@ helm upgrade --install sandbox-operator charts/sandbox-operator \
   --set image.tag=latest
 ```
 
-Chart 默认使用 Helm 模板生成自签 webhook 证书。若要使用 cert-manager：
+The chart generates a self-signed webhook certificate by default. To use cert-manager instead:
 
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \
