@@ -323,7 +323,6 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 					},
 				},
 				Spec: sandboxv1.SandboxSpec{
-					Name:           name,
 					TemplateRef:    sandboxv1.TemplateReference{ID: remote.TemplateIdentifier()},
 					TimeoutSeconds: remote.Timeout,
 				},

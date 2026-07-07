@@ -200,17 +200,11 @@ func TestTemplatePoolAndObservabilityLiveUnderRuntimeSpec(t *testing.T) {
 	}
 }
 
-func TestApplySandboxSpecPreservesLocalSandboxName(t *testing.T) {
+func TestApplySandboxSpecDoesNotWriteSandboxName(t *testing.T) {
 	obj := &sandboxv1.Sandbox{}
 	ApplySandboxSpecFromOpenAPI(obj, openapi.Sandbox{SandboxName: "remote-name"})
-	if obj.Spec.Name != "remote-name" {
-		t.Fatalf("empty local sandbox name should use remote name, got %q", obj.Spec.Name)
-	}
-
-	obj.Spec.Name = "user-name"
-	ApplySandboxSpecFromOpenAPI(obj, openapi.Sandbox{SandboxName: "remote-name-2"})
-	if obj.Spec.Name != "user-name" {
-		t.Fatalf("local sandbox name should be preserved, got %q", obj.Spec.Name)
+	if obj.Spec.Name != "" {
+		t.Fatalf("sandbox name should not be written to spec, got %q", obj.Spec.Name)
 	}
 }
 
@@ -319,7 +313,6 @@ func TestSandboxInlineTemplateObject(t *testing.T) {
 			Name:      "sandbox-a",
 		},
 		Spec: sandboxv1.SandboxSpec{
-			Name:                 "runtime-a",
 			OpenAPICredentialRef: &sandboxv1.OpenAPICredentialReference{Name: "openapi-cred"},
 			Template: &sandboxv1.SandboxInlineTemplate{
 				Description: "inline description",
@@ -336,7 +329,7 @@ func TestSandboxInlineTemplateObject(t *testing.T) {
 	if tpl == nil {
 		t.Fatalf("inline template object should be built")
 	}
-	if tpl.Namespace != "ns-a" || tpl.Name != "runtime-a-inline-template" {
+	if tpl.Namespace != "ns-a" || tpl.Name != "sandbox-a-inline-template" {
 		t.Fatalf("inline template metadata mismatch: %s/%s", tpl.Namespace, tpl.Name)
 	}
 	if tpl.Spec.OpenAPICredentialRef == nil || tpl.Spec.OpenAPICredentialRef.Name != "openapi-cred" {

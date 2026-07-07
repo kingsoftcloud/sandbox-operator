@@ -40,8 +40,13 @@ func IsNotFound(err error) bool {
 		if apiErr.StatusCode == http.StatusNotFound {
 			return true
 		}
-		switch apiErr.Code {
-		case "TemplateNotFound", "SandboxNotFound", "InstanceNotFound", "NotFound":
+		switch strings.ToLower(apiErr.Code) {
+		case "templatenotfound", "sandboxnotfound", "instancenotfound", "sandboxinstancenotfound", "notfound":
+			return true
+		}
+		code := strings.ToLower(apiErr.Code)
+		message := strings.ToLower(apiErr.Message)
+		if strings.Contains(code, "notfound") || strings.Contains(code, "not_found") || strings.Contains(message, "not found") || strings.Contains(message, "不存在") {
 			return true
 		}
 	}

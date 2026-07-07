@@ -181,7 +181,7 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 		if err := h.validateSandboxTemplateSource(&obj); err != nil {
 			return admission.Denied(err.Error())
 		}
-		if err := h.validateSandboxName(ctx, &obj, ""); err != nil {
+		if err := validateSandboxSpecNameUnset(&obj); err != nil {
 			return admission.Denied(err.Error())
 		}
 		return admission.Allowed("sandbox create validated")
@@ -200,11 +200,11 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 		if err := h.validateSandboxTemplateSource(&obj); err != nil {
 			return admission.Denied(err.Error())
 		}
-		if err := h.validateSandboxName(ctx, &obj, old.Name); err != nil {
-			return admission.Denied(err.Error())
+		if old.Spec.Name != obj.Spec.Name {
+			return admission.Denied("spec.name is not supported; use metadata.name as the sandbox name")
 		}
-		if !sandboxSpecOnlyNameOrTimeoutChanged(old.Spec, obj.Spec) {
-			return admission.Denied("only spec.name and spec.timeoutSeconds can be updated on Sandbox")
+		if !sandboxSpecOnlyTimeoutChanged(old.Spec, obj.Spec) {
+			return admission.Denied("only spec.timeoutSeconds can be updated on Sandbox")
 		}
 		if old.Spec.TimeoutSeconds != obj.Spec.TimeoutSeconds {
 			if annotations.Get(obj.Annotations, annotations.SandboxID) == "" {
@@ -229,18 +229,7 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 
 func (h *Handler) handleClaim(ctx context.Context, req admission.Request) admission.Response {
 	if req.Operation == admissionv1.Update {
-		var obj sandboxv1.SandboxClaim
-		var old sandboxv1.SandboxClaim
-		if err := h.Decoder.Decode(req, &obj); err != nil {
-			return admission.Errored(http.StatusBadRequest, err)
-		}
-		if err := h.decodeOld(req, &old); err != nil {
-			return admission.Errored(http.StatusBadRequest, err)
-		}
-		if err := h.validateReservedAnnotationsUnchanged(&old, &obj); err != nil {
-			return admission.Denied(err.Error())
-		}
-		return admission.Allowed("claim update accepted")
+		return admission.Denied("SandboxClaim updates are not supported; delete and recreate the claim")
 	}
 	if req.Operation != admissionv1.Create {
 		return admission.Allowed("claim update/delete deferred to controller")
@@ -295,7 +284,7 @@ func (h *Handler) mutateSandboxCreate(ctx context.Context, req admission.Request
 	if err := h.validateNoReservedAnnotations(&obj); err != nil {
 		return admission.Denied(err.Error())
 	}
-	if err := h.validateSandboxName(ctx, &obj, ""); err != nil {
+	if err := validateSandboxSpecNameUnset(&obj); err != nil {
 		return admission.Denied(err.Error())
 	}
 	if err := h.validateSandboxTemplateSource(&obj); err != nil {
@@ -582,16 +571,14 @@ func (h *Handler) resolveClaimTemplateID(ctx context.Context, obj *sandboxv1.San
 	return templateID, nil
 }
 
-func (h *Handler) validateSandboxName(ctx context.Context, obj *sandboxv1.Sandbox, currentObjectName string) error {
-	effectiveName := obj.Spec.Name
-	if effectiveName == "" {
-		effectiveName = obj.Name
+func validateSandboxSpecNameUnset(obj *sandboxv1.Sandbox) error {
+	if obj.Spec.Name != "" {
+		return fmt.Errorf("spec.name is not supported; use metadata.name as the sandbox name")
 	}
-	return h.ensureSandboxNameAvailable(ctx, obj.Namespace, effectiveName, currentObjectName)
+	return nil
 }
 
-func sandboxSpecOnlyNameOrTimeoutChanged(oldSpec, newSpec sandboxv1.SandboxSpec) bool {
-	oldSpec.Name = newSpec.Name
+func sandboxSpecOnlyTimeoutChanged(oldSpec, newSpec sandboxv1.SandboxSpec) bool {
 	oldSpec.TimeoutSeconds = newSpec.TimeoutSeconds
 	return reflect.DeepEqual(oldSpec, newSpec)
 }
@@ -605,11 +592,7 @@ func (h *Handler) ensureSandboxNameAvailable(ctx context.Context, namespace, san
 		if currentObjectName != "" && item.Name == currentObjectName {
 			continue
 		}
-		effective := item.Spec.Name
-		if effective == "" {
-			effective = item.Name
-		}
-		if effective == sandboxName {
+		if item.Name == sandboxName {
 			return fmt.Errorf("sandbox name %q already exists in namespace %s", sandboxName, namespace)
 		}
 	}

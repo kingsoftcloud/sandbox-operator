@@ -160,8 +160,19 @@ func (r *SandboxClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{RequeueAfter: FastRequeue}, nil
 	}
 
+	if isTerminalClaimPhase(claim.Status.Phase) {
+		return ctrl.Result{}, nil
+	}
+
 	if err := r.ensureClaimSandboxes(ctx, &claim); err != nil {
 		return ctrl.Result{}, err
+	}
+	if annotations.Get(claim.Annotations, annotations.SandboxIDs) != "" {
+		delete(claim.Annotations, annotations.SandboxIDs)
+		if err := r.Update(ctx, &claim); err != nil {
+			return ctrl.Result{}, ignoreConflict(err)
+		}
+		return ctrl.Result{RequeueAfter: FastRequeue}, nil
 	}
 	var sandboxes sandboxv1.SandboxList
 	if err := r.List(ctx, &sandboxes, client.InNamespace(req.Namespace)); err != nil {
@@ -177,6 +188,9 @@ func (r *SandboxClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	next.Failed = 0
 	for _, sbx := range sandboxes.Items {
 		if sbx.Spec.ClaimRef == nil || sbx.Spec.ClaimRef.Name != claim.Name {
+			continue
+		}
+		if !sbx.DeletionTimestamp.IsZero() {
 			continue
 		}
 		next.Created++
@@ -359,6 +373,9 @@ func (r *SandboxClaimReconciler) ensureClaimSandboxes(ctx context.Context, claim
 		var existing sandboxv1.Sandbox
 		err := r.Get(ctx, client.ObjectKey{Namespace: claim.Namespace, Name: name}, &existing)
 		if err == nil {
+			if !existing.DeletionTimestamp.IsZero() {
+				continue
+			}
 			changed := false
 			if annotations.Get(existing.Annotations, annotations.SandboxID) == "" {
 				if existing.Annotations == nil {
@@ -398,7 +415,6 @@ func (r *SandboxClaimReconciler) ensureClaimSandboxes(ctx context.Context, claim
 				},
 			},
 			Spec: sandboxv1.SandboxSpec{
-				Name:                 name,
 				OpenAPICredentialRef: claim.Spec.OpenAPICredentialRef,
 				ClaimRef:             &sandboxv1.ClaimReference{Name: claim.Name},
 				TemplateRef:          claim.Spec.TemplateRef,
@@ -417,6 +433,10 @@ func (r *SandboxClaimReconciler) ensureClaimSandboxes(ctx context.Context, claim
 		}
 	}
 	return nil
+}
+
+func isTerminalClaimPhase(phase sandboxv1.Phase) bool {
+	return phase == sandboxv1.PhaseSuccessful || phase == sandboxv1.PhaseFailed
 }
 
 func (r *SandboxTemplateReconciler) handleMissingTemplate(ctx context.Context, obj *sandboxv1.SandboxTemplate) error {

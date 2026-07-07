@@ -62,10 +62,7 @@ func SandboxInlineTemplateObject(in *sandboxv1.Sandbox) *sandboxv1.SandboxTempla
 	inline := in.Spec.Template
 	name := inline.Name
 	if name == "" {
-		name = in.Spec.Name
-		if name == "" {
-			name = in.Name
-		}
+		name = in.Name
 		if name == "" {
 			name = "inline-template"
 		} else {
@@ -267,13 +264,6 @@ func ApplyTemplateStatusFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote opena
 }
 
 func ApplySandboxSpecFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
-	if obj.Spec.Name == "" {
-		if remote.Name() != "" {
-			obj.Spec.Name = remote.Name()
-		} else {
-			obj.Spec.Name = obj.Name
-		}
-	}
 	if obj.Spec.Template == nil && obj.Spec.TemplateRef.ID == "" && remote.TemplateIdentifier() != "" {
 		obj.Spec.TemplateRef.ID = remote.TemplateIdentifier()
 	}

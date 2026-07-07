@@ -9,7 +9,7 @@ import (
 	sandboxv1 "sandbox-operator/api/v1alpha1"
 )
 
-func TestSandboxSpecOnlyNameOrTimeoutChanged(t *testing.T) {
+func TestSandboxSpecOnlyTimeoutChanged(t *testing.T) {
 	oldSpec := sandboxv1.SandboxSpec{
 		Name:           "sandbox-a",
 		TemplateRef:    sandboxv1.TemplateReference{ID: "tpl-1"},
@@ -17,22 +17,27 @@ func TestSandboxSpecOnlyNameOrTimeoutChanged(t *testing.T) {
 		Env:            []sandboxv1.EnvVar{{Key: "APP_ENV", Value: "prod"}},
 	}
 
-	nameAndTimeout := oldSpec
-	nameAndTimeout.Name = "sandbox-b"
-	nameAndTimeout.TimeoutSeconds = 7200
-	if !sandboxSpecOnlyNameOrTimeoutChanged(oldSpec, nameAndTimeout) {
-		t.Fatalf("name and timeout changes should be allowed")
+	timeoutChanged := oldSpec
+	timeoutChanged.TimeoutSeconds = 7200
+	if !sandboxSpecOnlyTimeoutChanged(oldSpec, timeoutChanged) {
+		t.Fatalf("timeout changes should be allowed")
+	}
+
+	nameChanged := oldSpec
+	nameChanged.Name = "sandbox-b"
+	if sandboxSpecOnlyTimeoutChanged(oldSpec, nameChanged) {
+		t.Fatalf("name changes should be rejected")
 	}
 
 	envChanged := oldSpec
 	envChanged.Env = []sandboxv1.EnvVar{{Key: "APP_ENV", Value: "dev"}}
-	if sandboxSpecOnlyNameOrTimeoutChanged(oldSpec, envChanged) {
+	if sandboxSpecOnlyTimeoutChanged(oldSpec, envChanged) {
 		t.Fatalf("env changes should be rejected")
 	}
 
 	templateChanged := oldSpec
 	templateChanged.TemplateRef.ID = "tpl-2"
-	if sandboxSpecOnlyNameOrTimeoutChanged(oldSpec, templateChanged) {
+	if sandboxSpecOnlyTimeoutChanged(oldSpec, templateChanged) {
 		t.Fatalf("templateRef changes should be rejected")
 	}
 }
