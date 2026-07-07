@@ -65,9 +65,7 @@ The following field mapping applies:
 | type | `spec.type` |
 | access | `spec.access` |
 | image | `spec.template.spec.image` |
-| CPU, memory, system disk | `spec.template.spec.resources` |
-| KEC instance type and system disk type | `spec.template.spec.kec` |
-| data disks | `spec.template.spec.dataDisks` |
+| CPU, memory, instance type, system disk, data disks | `spec.template.spec.kecConfig` |
 | ports | `spec.template.spec.ports` |
 | start command | `spec.template.spec.startCommand` |
 | environment variables | `spec.template.spec.env` |
@@ -160,11 +158,11 @@ When you modify `SandboxTemplate.spec`, the validating webhook computes the diff
 | `spec.template.spec.image` | Image source, image address, and registry credential. |
 | `spec.template.spec.ports` | Exposed ports. |
 | `spec.template.spec.startCommand` | Start command. |
-| `spec.template.spec.resources.cpu` | CPU. |
-| `spec.template.spec.resources.memory` | Memory. |
-| `spec.template.spec.resources.disk` | System disk size; updated through the KEC configuration. |
-| `spec.template.spec.kec` | Instance type and system disk type. |
-| `spec.template.spec.dataDisks` | Data disks. |
+| `spec.template.spec.kecConfig.cpu` | CPU. |
+| `spec.template.spec.kecConfig.memory` | Memory. |
+| `spec.template.spec.kecConfig.instanceType` | KEC instance type. |
+| `spec.template.spec.kecConfig.systemDisk` | System disk type and size. |
+| `spec.template.spec.kecConfig.dataDisks` | Data disks. |
 | `spec.template.spec.env` | Template environment variables, using `name`/`value`. |
 | `spec.template.spec.networkConfig` | Network configuration. |
 | `spec.template.spec.skillConfig` | Skill configuration. |
@@ -185,7 +183,7 @@ If you modify KS3/KPFS mounts:
 * To remove all KPFS mounts, delete `kpfsMountConfig` or set `enabled: false`.
 * As long as the updated KS3 or KPFS mount remains enabled, `spec.template.spec.storageCredentialRef.name` must be configured and the referenced Secret must contain `accessKey` and `secretAccessKey`.
 
-If you modify disk, data disk, or KEC fields, ensure that `spec.template.spec.kec.instanceType`, `spec.template.spec.kec.systemDiskType`, and `spec.template.spec.resources.disk` are all provided.
+If you modify instance type, system disk, or data disk fields, ensure that `spec.template.spec.kecConfig.instanceType`, `spec.template.spec.kecConfig.systemDisk.type`, and `spec.template.spec.kecConfig.systemDisk.size` are all provided.
 
 ### 3.3 Delete a template
 

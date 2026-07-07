@@ -124,26 +124,22 @@ spec:
           name: image-credential
           server: hub-vpc-cn-beijing-6.kce.ksyun.com
 
-      # CPU, memory, and system disk.
-      resources:
+      # KEC, compute, system disk, and data disk configuration.
+      # If instanceType, systemDisk, or dataDisks is configured, instanceType,
+      # systemDisk.type, and systemDisk.size must all be provided.
+      kecConfig:
         cpu: "2"
         memory: 4Gi
-        disk: 20Gi
-
-      # KEC configuration. Whenever instance type, system disk type, or data disks are configured,
-      # all three of the following must be provided:
-      # kec.instanceType, kec.systemDiskType, resources.disk.
-      kec:
         instanceType: S6.2A
-        systemDiskType: ESSD_SYSTEM_PL1
-
-      # Data disks. sizeMB is in MiB.
-      dataDisks:
-        - name: data-0
-          type: ESSD_PL1
-          sizeMB: 51200
-          deleteWithInstance: true
-          path: /root/tmp
+        systemDisk:
+          type: ESSD_SYSTEM_PL1
+          size: 20Gi
+        dataDisks:
+          - name: data-0
+            type: ESSD_PL1
+            sizeMB: 51200
+            deleteWithInstance: true
+            path: /root/tmp
 
       # Container ports.
       ports:
@@ -257,10 +253,9 @@ spec:
       image:
         source: Public
         image: "hub.kce.ksyun.com/sandbox/browser:v20260608"
-      resources:
+      kecConfig:
         cpu: "2"
         memory: 4Gi
-        disk: 20Gi
       ports:
         - name: browser
           containerPort: 8080
@@ -385,21 +380,19 @@ spec:
           name: image-credential
           server: hub-vpc-cn-beijing-6.kce.ksyun.com
 
-      resources:
+      kecConfig:
         cpu: "2"
         memory: 4Gi
-        disk: 20Gi
-
-      kec:
         instanceType: S6.2A
-        systemDiskType: ESSD_SYSTEM_PL1
-
-      dataDisks:
-        - name: data-0
-          type: ESSD_PL1
-          sizeMB: 51200
-          deleteWithInstance: true
-          path: /root/tmp
+        systemDisk:
+          type: ESSD_SYSTEM_PL1
+          size: 20Gi
+        dataDisks:
+          - name: data-0
+            type: ESSD_PL1
+            sizeMB: 51200
+            deleteWithInstance: true
+            path: /root/tmp
 
       ports:
         - name: api

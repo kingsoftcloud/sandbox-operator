@@ -62,7 +62,7 @@ type RuntimeTemplate struct {
 
 type RuntimeTemplateSpec struct {
 	Image                *TemplateImageSpec    `json:"image,omitempty"`
-	Resources            *RuntimeResourceSpec  `json:"resources,omitempty"`
+	KecConfig            *RuntimeKecConfig     `json:"kecConfig,omitempty"`
 	Ports                []ContainerPortSpec   `json:"ports,omitempty"`
 	StartCommand         string                `json:"startCommand,omitempty"`
 	Env                  []TemplateEnvVar      `json:"env,omitempty"`
@@ -71,8 +71,6 @@ type RuntimeTemplateSpec struct {
 	KpfsMountConfig      *MountConfig          `json:"kpfsMountConfig,omitempty"`
 	NetworkConfig        *OpenAPINetworkConfig `json:"networkConfig,omitempty"`
 	SkillConfig          *SkillConfig          `json:"skillConfig,omitempty"`
-	Kec                  *KecSpec              `json:"kec,omitempty"`
-	DataDisks            []DataDiskSpec        `json:"dataDisks,omitempty"`
 	Pool                 *TemplatePoolSpec     `json:"pool,omitempty"`
 	Observability        *ObservabilitySpec    `json:"observability,omitempty"`
 }
@@ -81,12 +79,6 @@ type TemplateImageSpec struct {
 	Source                string                       `json:"source,omitempty"`
 	Image                 string                       `json:"image,omitempty"`
 	RegistryCredentialRef *RegistryCredentialReference `json:"registryCredentialRef,omitempty"`
-}
-
-type RuntimeResourceSpec struct {
-	CPU    string            `json:"cpu,omitempty"`
-	Memory resource.Quantity `json:"memory,omitempty"`
-	Disk   resource.Quantity `json:"disk,omitempty"`
 }
 
 type ContainerPortSpec struct {
@@ -117,17 +109,25 @@ type SkillConfig struct {
 	EnablePublicSkill bool     `json:"enablePublicSkill,omitempty"`
 }
 
+type RuntimeKecConfig struct {
+	CPU          string            `json:"cpu,omitempty"`
+	Memory       resource.Quantity `json:"memory,omitempty"`
+	InstanceType string            `json:"instanceType,omitempty"`
+	SystemDisk   *SystemDiskSpec   `json:"systemDisk,omitempty"`
+	DataDisks    []DataDiskSpec    `json:"dataDisks,omitempty"`
+}
+
+type SystemDiskSpec struct {
+	Type string            `json:"type,omitempty"`
+	Size resource.Quantity `json:"size,omitempty"`
+}
+
 type DataDiskSpec struct {
 	Name               string `json:"name,omitempty"`
 	Type               string `json:"type,omitempty"`
 	SizeMB             int64  `json:"sizeMB,omitempty"`
 	DeleteWithInstance bool   `json:"deleteWithInstance,omitempty"`
 	Path               string `json:"path,omitempty"`
-}
-
-type KecSpec struct {
-	InstanceType   string `json:"instanceType,omitempty"`
-	SystemDiskType string `json:"systemDiskType,omitempty"`
 }
 
 type TemplatePoolSpec struct {

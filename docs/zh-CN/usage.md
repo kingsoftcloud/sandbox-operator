@@ -65,9 +65,7 @@ kubectl get stpl -n sandbox-demo <template-name> -o yaml
 | 模板类型 | `spec.type` |
 | 访问类型 | `spec.access` |
 | 镜像 | `spec.template.spec.image` |
-| CPU、内存、系统盘 | `spec.template.spec.resources` |
-| KEC 机型与系统盘类型 | `spec.template.spec.kec` |
-| 数据盘 | `spec.template.spec.dataDisks` |
+| CPU、内存、机型、系统盘、数据盘 | `spec.template.spec.kecConfig` |
 | 端口 | `spec.template.spec.ports` |
 | 启动命令 | `spec.template.spec.startCommand` |
 | 环境变量 | `spec.template.spec.env` |
@@ -161,11 +159,11 @@ kubectl get stpl -n sandbox-demo full-template \
 | `spec.template.spec.image` | 镜像来源、镜像地址、镜像仓库凭据。 |
 | `spec.template.spec.ports` | 暴露端口。 |
 | `spec.template.spec.startCommand` | 启动命令。 |
-| `spec.template.spec.resources.cpu` | CPU。 |
-| `spec.template.spec.resources.memory` | 内存。 |
-| `spec.template.spec.resources.disk` | 系统盘大小；会通过 KEC 配置更新。 |
-| `spec.template.spec.kec` | 机型和系统盘类型。 |
-| `spec.template.spec.dataDisks` | 数据盘。 |
+| `spec.template.spec.kecConfig.cpu` | CPU。 |
+| `spec.template.spec.kecConfig.memory` | 内存。 |
+| `spec.template.spec.kecConfig.instanceType` | KEC 机型。 |
+| `spec.template.spec.kecConfig.systemDisk` | 系统盘类型和大小。 |
+| `spec.template.spec.kecConfig.dataDisks` | 数据盘。 |
 | `spec.template.spec.env` | 模板环境变量，字段为 `name/value`。 |
 | `spec.template.spec.networkConfig` | 网络配置。 |
 | `spec.template.spec.skillConfig` | 技能配置。 |
@@ -186,7 +184,7 @@ kubectl edit stpl -n sandbox-demo full-template
 - 删除全部 KPFS 挂载时，可以删除 `kpfsMountConfig` 或设置 `enabled: false`。
 - 只要更新后的 KS3 或 KPFS 仍为启用状态，就必须配置 `spec.template.spec.storageCredentialRef.name`，并确保该 Secret 存在 `accessKey` 和 `secretAccessKey`。
 
-如果修改磁盘、数据盘或 KEC 字段，需要保证 `spec.template.spec.kec.instanceType`、`spec.template.spec.kec.systemDiskType`、`spec.template.spec.resources.disk` 三个字段完整。
+如果修改机型、系统盘或数据盘字段，需要保证 `spec.template.spec.kecConfig.instanceType`、`spec.template.spec.kecConfig.systemDisk.type`、`spec.template.spec.kecConfig.systemDisk.size` 三个字段完整。
 
 ### 3.3 删除模板
 

@@ -121,17 +121,16 @@ func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime R
 	if templateStartCommand(inTpl) != templateStartCommand(oldTpl) {
 		req.Command = full.Command
 	}
-	if !reflect.DeepEqual(templateResources(inTpl), templateResources(oldTpl)) {
+	if templateCPU(inTpl) != templateCPU(oldTpl) {
 		req.CPU = full.CPU
+	}
+	if templateMemoryGB(inTpl) != templateMemoryGB(oldTpl) {
 		req.Memory = full.Memory
-		if !templateDiskEqual(inTpl, oldTpl) {
-			req.KecConfig = templateKecConfig(inTpl)
-		}
 	}
-	if !reflect.DeepEqual(templateDataDiskSpec(inTpl), templateDataDiskSpec(oldTpl)) {
-		req.KecConfig = templateKecConfig(inTpl)
-	}
-	if !reflect.DeepEqual(templateKecSpec(inTpl), templateKecSpec(oldTpl)) {
+	if !templateDiskEqual(inTpl, oldTpl) ||
+		!reflect.DeepEqual(templateDataDiskSpec(inTpl), templateDataDiskSpec(oldTpl)) ||
+		templateInstanceType(inTpl) != templateInstanceType(oldTpl) ||
+		templateSystemDiskType(inTpl) != templateSystemDiskType(oldTpl) {
 		req.KecConfig = templateKecConfig(inTpl)
 	}
 	if !reflect.DeepEqual(templateEnvSpec(inTpl), templateEnvSpec(oldTpl)) {
@@ -498,8 +497,8 @@ func templatePortsSpec(tpl *sandboxv1.RuntimeTemplateSpec) []sandboxv1.Container
 }
 
 func templateCPU(tpl *sandboxv1.RuntimeTemplateSpec) int {
-	if tpl != nil && tpl.Resources != nil && tpl.Resources.CPU != "" {
-		value, err := strconv.Atoi(strings.TrimSpace(tpl.Resources.CPU))
+	if tpl != nil && tpl.KecConfig != nil && tpl.KecConfig.CPU != "" {
+		value, err := strconv.Atoi(strings.TrimSpace(tpl.KecConfig.CPU))
 		if err == nil {
 			return value
 		}
@@ -507,11 +506,11 @@ func templateCPU(tpl *sandboxv1.RuntimeTemplateSpec) int {
 	return 0
 }
 
-func templateResources(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.RuntimeResourceSpec {
+func templateKecConfigSpec(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.RuntimeKecConfig {
 	if tpl == nil {
 		return nil
 	}
-	return tpl.Resources
+	return tpl.KecConfig
 }
 
 func templateDiskEqual(a, b *sandboxv1.RuntimeTemplateSpec) bool {
@@ -519,36 +518,43 @@ func templateDiskEqual(a, b *sandboxv1.RuntimeTemplateSpec) bool {
 }
 
 func templateDiskGB(tpl *sandboxv1.RuntimeTemplateSpec) int64 {
-	if tpl == nil || tpl.Resources == nil || tpl.Resources.Disk.IsZero() {
+	if tpl == nil || tpl.KecConfig == nil || tpl.KecConfig.SystemDisk == nil || tpl.KecConfig.SystemDisk.Size.IsZero() {
 		return 0
 	}
-	return int64(quantityGB(tpl.Resources.Disk.Value()))
+	return int64(quantityGB(tpl.KecConfig.SystemDisk.Size.Value()))
 }
 
 func templateDataDiskSpec(tpl *sandboxv1.RuntimeTemplateSpec) []sandboxv1.DataDiskSpec {
-	if tpl == nil {
+	if tpl == nil || tpl.KecConfig == nil {
 		return nil
 	}
-	return tpl.DataDisks
+	return tpl.KecConfig.DataDisks
 }
 
-func templateKecSpec(tpl *sandboxv1.RuntimeTemplateSpec) *sandboxv1.KecSpec {
-	if tpl == nil {
-		return nil
+func templateInstanceType(tpl *sandboxv1.RuntimeTemplateSpec) string {
+	if tpl == nil || tpl.KecConfig == nil {
+		return ""
 	}
-	return tpl.Kec
+	return tpl.KecConfig.InstanceType
+}
+
+func templateSystemDiskType(tpl *sandboxv1.RuntimeTemplateSpec) string {
+	if tpl == nil || tpl.KecConfig == nil || tpl.KecConfig.SystemDisk == nil {
+		return ""
+	}
+	return tpl.KecConfig.SystemDisk.Type
 }
 
 func templateMemoryMB(tpl *sandboxv1.RuntimeTemplateSpec) int {
-	if tpl != nil && tpl.Resources != nil && !tpl.Resources.Memory.IsZero() {
-		return quantityMB(tpl.Resources.Memory.Value())
+	if tpl != nil && tpl.KecConfig != nil && !tpl.KecConfig.Memory.IsZero() {
+		return quantityMB(tpl.KecConfig.Memory.Value())
 	}
 	return 0
 }
 
 func templateMemoryGB(tpl *sandboxv1.RuntimeTemplateSpec) int {
-	if tpl != nil && tpl.Resources != nil && !tpl.Resources.Memory.IsZero() {
-		return quantityGB(tpl.Resources.Memory.Value())
+	if tpl != nil && tpl.KecConfig != nil && !tpl.KecConfig.Memory.IsZero() {
+		return quantityGB(tpl.KecConfig.Memory.Value())
 	}
 	return 0
 }
@@ -638,8 +644,8 @@ func templateAccessIsPublic(value string) bool {
 func templateKecConfig(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.KecConfig {
 	systemDiskSizeGB := templateDiskGB(tpl)
 	dataDisks := templateDataDisks(tpl)
-	kec := templateKecSpec(tpl)
-	if systemDiskSizeGB == 0 && len(dataDisks) == 0 && (kec == nil || (kec.InstanceType == "" && kec.SystemDiskType == "")) {
+	kec := templateKecConfigSpec(tpl)
+	if systemDiskSizeGB == 0 && len(dataDisks) == 0 && (kec == nil || (kec.InstanceType == "" && templateSystemDiskType(tpl) == "")) {
 		return nil
 	}
 	out := &openapi.KecConfig{
@@ -649,7 +655,7 @@ func templateKecConfig(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.KecConfig {
 	}
 	if kec != nil {
 		out.InstanceType = kec.InstanceType
-		out.SystemDiskType = kec.SystemDiskType
+		out.SystemDiskType = templateSystemDiskType(tpl)
 	}
 	return out
 }
@@ -708,11 +714,11 @@ func templateSkillToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.SkillCo
 }
 
 func templateDataDisks(tpl *sandboxv1.RuntimeTemplateSpec) []openapi.DataDisk {
-	if tpl == nil || len(tpl.DataDisks) == 0 {
+	if tpl == nil || tpl.KecConfig == nil || len(tpl.KecConfig.DataDisks) == 0 {
 		return nil
 	}
-	out := make([]openapi.DataDisk, 0, len(tpl.DataDisks))
-	for _, disk := range tpl.DataDisks {
+	out := make([]openapi.DataDisk, 0, len(tpl.KecConfig.DataDisks))
+	for _, disk := range tpl.KecConfig.DataDisks {
 		out = append(out, openapi.DataDisk{
 			Type:               disk.Type,
 			SizeGB:             (disk.SizeMB + 1023) / 1024,
@@ -733,19 +739,33 @@ func applyRuntimeSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.
 	} else {
 		tpl.Image = nil
 	}
-	if remote.CPU > 0 || remote.Memory > 0 || remote.DiskSizeMB() > 0 {
-		tpl.Resources = &sandboxv1.RuntimeResourceSpec{}
+	if remote.CPU > 0 || remote.Memory > 0 || remote.DiskSizeMB() > 0 ||
+		(remote.KecConfig != nil && (remote.KecConfig.InstanceType != "" || remote.KecConfig.SystemDiskType != "" || len(remote.KecConfig.DataDisks) > 0)) {
+		tpl.KecConfig = &sandboxv1.RuntimeKecConfig{}
 		if remote.CPU > 0 {
-			tpl.Resources.CPU = strconv.Itoa(remote.CPU)
+			tpl.KecConfig.CPU = strconv.Itoa(remote.CPU)
 		}
 		if remote.Memory > 0 {
-			tpl.Resources.Memory = *resourceFromGB(remote.Memory)
+			tpl.KecConfig.Memory = *resourceFromGB(remote.Memory)
 		}
 		if remote.DiskSizeMB() > 0 {
-			tpl.Resources.Disk = *resourceFromMB64(remote.DiskSizeMB())
+			if tpl.KecConfig.SystemDisk == nil {
+				tpl.KecConfig.SystemDisk = &sandboxv1.SystemDiskSpec{}
+			}
+			tpl.KecConfig.SystemDisk.Size = *resourceFromMB64(remote.DiskSizeMB())
+		}
+		if remote.KecConfig != nil && (remote.KecConfig.InstanceType != "" || remote.KecConfig.SystemDiskType != "") {
+			tpl.KecConfig.InstanceType = remote.KecConfig.InstanceType
+			if tpl.KecConfig.SystemDisk == nil {
+				tpl.KecConfig.SystemDisk = &sandboxv1.SystemDiskSpec{}
+			}
+			tpl.KecConfig.SystemDisk.Type = remote.KecConfig.SystemDiskType
+		}
+		if remote.KecConfig != nil && len(remote.KecConfig.DataDisks) > 0 {
+			tpl.KecConfig.DataDisks = dataDisksFromOpenAPI(remote.KecConfig.DataDisks)
 		}
 	} else {
-		tpl.Resources = nil
+		tpl.KecConfig = nil
 	}
 	if len(remote.Ports) > 0 {
 		tpl.Ports = portsFromOpenAPI(remote.Ports)
@@ -760,19 +780,6 @@ func applyRuntimeSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.
 	}
 	tpl.NetworkConfig = networkConfigFromOpenAPI(remote.NetworkConfig)
 	tpl.SkillConfig = skillFromOpenAPI(remote.SkillConfig)
-	if remote.KecConfig != nil && (remote.KecConfig.InstanceType != "" || remote.KecConfig.SystemDiskType != "") {
-		tpl.Kec = &sandboxv1.KecSpec{
-			InstanceType:   remote.KecConfig.InstanceType,
-			SystemDiskType: remote.KecConfig.SystemDiskType,
-		}
-	} else {
-		tpl.Kec = nil
-	}
-	if remote.KecConfig != nil && len(remote.KecConfig.DataDisks) > 0 {
-		tpl.DataDisks = dataDisksFromOpenAPI(remote.KecConfig.DataDisks)
-	} else {
-		tpl.DataDisks = nil
-	}
 	tpl.Ks3MountConfig = mountConfigFromOpenAPI("ks3", remote.KS3MountConfig)
 	tpl.KpfsMountConfig = mountConfigFromOpenAPI("kpfs", remote.KPFSMountConfig)
 	if remote.KlogConfig != nil {

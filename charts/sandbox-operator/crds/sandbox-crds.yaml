@@ -73,15 +73,38 @@ spec:
                                   type: string
                                 server:
                                   type: string
-                        resources:
+                        kecConfig:
                           type: object
                           properties:
                             cpu:
                               type: string
                             memory:
                               type: string
-                            disk:
+                            instanceType:
                               type: string
+                            systemDisk:
+                              type: object
+                              properties:
+                                type:
+                                  type: string
+                                size:
+                                  type: string
+                            dataDisks:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  name:
+                                    type: string
+                                  type:
+                                    type: string
+                                  sizeMB:
+                                    type: integer
+                                    format: int64
+                                  deleteWithInstance:
+                                    type: boolean
+                                  path:
+                                    type: string
                         ports:
                           type: array
                           items:
@@ -179,29 +202,6 @@ spec:
                                 type: string
                             enablePublicSkill:
                               type: boolean
-                        kec:
-                          type: object
-                          properties:
-                            instanceType:
-                              type: string
-                            systemDiskType:
-                              type: string
-                        dataDisks:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              name:
-                                type: string
-                              type:
-                                type: string
-                              sizeMB:
-                                type: integer
-                                format: int64
-                              deleteWithInstance:
-                                type: boolean
-                              path:
-                                type: string
                         pool:
                           type: object
                           properties:

@@ -463,13 +463,14 @@ func (h *Handler) validateTemplate(obj *sandboxv1.SandboxTemplate) error {
 		if templateAccessIsPublic(obj.Spec.Access) && tpl.Pool != nil {
 			return fmt.Errorf("spec.template.spec.pool is not supported when spec.access is Public")
 		}
-		kec := tpl.Kec
-		hasKec := kec != nil && (kec.InstanceType != "" || kec.SystemDiskType != "")
-		hasSystemDisk := tpl.Resources != nil && !tpl.Resources.Disk.IsZero()
-		hasDataDisks := len(tpl.DataDisks) > 0
-		if hasKec || hasSystemDisk || hasDataDisks {
-			if kec == nil || kec.InstanceType == "" || kec.SystemDiskType == "" || !hasSystemDisk {
-				return fmt.Errorf("KEC config requires spec.template.spec.kec.instanceType, spec.template.spec.kec.systemDiskType, and spec.template.spec.resources.disk")
+		kec := tpl.KecConfig
+		hasInstanceType := kec != nil && kec.InstanceType != ""
+		hasSystemDiskType := kec != nil && kec.SystemDisk != nil && kec.SystemDisk.Type != ""
+		hasSystemDiskSize := kec != nil && kec.SystemDisk != nil && !kec.SystemDisk.Size.IsZero()
+		hasDataDisks := kec != nil && len(kec.DataDisks) > 0
+		if hasInstanceType || hasSystemDiskType || hasSystemDiskSize || hasDataDisks {
+			if !hasInstanceType || !hasSystemDiskType || !hasSystemDiskSize {
+				return fmt.Errorf("KEC config requires spec.template.spec.kecConfig.instanceType, spec.template.spec.kecConfig.systemDisk.type, and spec.template.spec.kecConfig.systemDisk.size")
 			}
 		}
 	}

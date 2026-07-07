@@ -123,25 +123,22 @@ spec:
           name: image-credential
           server: hub-vpc-cn-beijing-6.kce.ksyun.com
 
-      # CPU、内存和系统盘。
-      resources:
+      # KEC、计算资源、系统盘和数据盘配置。
+      # 只要配置机型、系统盘或数据盘，就需要同时具备：
+      # instanceType、systemDisk.type、systemDisk.size。
+      kecConfig:
         cpu: "2"
         memory: 4Gi
-        disk: 20Gi
-
-      # KEC 配置。只要配置机型、系统盘或数据盘，就需要同时具备：
-      # kec.instanceType、kec.systemDiskType、resources.disk。
-      kec:
         instanceType: S6.2A
-        systemDiskType: ESSD_SYSTEM_PL1
-
-      # 数据盘。sizeMB 单位为 MiB。
-      dataDisks:
-        - name: data-0
-          type: ESSD_PL1
-          sizeMB: 51200
-          deleteWithInstance: true
-          path: /root/tmp
+        systemDisk:
+          type: ESSD_SYSTEM_PL1
+          size: 20Gi
+        dataDisks:
+          - name: data-0
+            type: ESSD_PL1
+            sizeMB: 51200
+            deleteWithInstance: true
+            path: /root/tmp
 
       # 容器端口。
       ports:
@@ -255,10 +252,9 @@ spec:
       image:
         source: Public
         image: "hub.kce.ksyun.com/sandbox/browser:v20260608"
-      resources:
+      kecConfig:
         cpu: "2"
         memory: 4Gi
-        disk: 20Gi
       ports:
         - name: browser
           containerPort: 8080
@@ -383,21 +379,19 @@ spec:
           name: image-credential
           server: hub-vpc-cn-beijing-6.kce.ksyun.com
 
-      resources:
+      kecConfig:
         cpu: "2"
         memory: 4Gi
-        disk: 20Gi
-
-      kec:
         instanceType: S6.2A
-        systemDiskType: ESSD_SYSTEM_PL1
-
-      dataDisks:
-        - name: data-0
-          type: ESSD_PL1
-          sizeMB: 51200
-          deleteWithInstance: true
-          path: /root/tmp
+        systemDisk:
+          type: ESSD_SYSTEM_PL1
+          size: 20Gi
+        dataDisks:
+          - name: data-0
+            type: ESSD_PL1
+            sizeMB: 51200
+            deleteWithInstance: true
+            path: /root/tmp
 
       ports:
         - name: api

@@ -45,16 +45,14 @@ func TestSandboxSpecOnlyTimeoutChanged(t *testing.T) {
 func TestValidateTemplateRequiresCompleteKecConfig(t *testing.T) {
 	h := &Handler{}
 	obj := validTemplateForWebhook()
-	obj.Spec.Template.Spec.Resources.Disk = resource.MustParse("80Gi")
+	obj.Spec.Template.Spec.KecConfig.SystemDisk = &sandboxv1.SystemDiskSpec{Size: resource.MustParse("80Gi")}
 
 	if err := h.validateTemplate(obj); err == nil {
 		t.Fatalf("disk without kec instanceType/systemDiskType should be rejected")
 	}
 
-	obj.Spec.Template.Spec.Kec = &sandboxv1.KecSpec{
-		InstanceType:   "N3.2B",
-		SystemDiskType: "ESSD_PL0",
-	}
+	obj.Spec.Template.Spec.KecConfig.InstanceType = "N3.2B"
+	obj.Spec.Template.Spec.KecConfig.SystemDisk.Type = "ESSD_PL0"
 	if err := h.validateTemplate(obj); err != nil {
 		t.Fatalf("complete kec config should be accepted: %v", err)
 	}
@@ -137,7 +135,7 @@ func validTemplateForWebhook() *sandboxv1.SandboxTemplate {
 			Type:   "Custom",
 			Template: &sandboxv1.RuntimeTemplate{
 				Spec: sandboxv1.RuntimeTemplateSpec{
-					Resources: &sandboxv1.RuntimeResourceSpec{},
+					KecConfig: &sandboxv1.RuntimeKecConfig{},
 				},
 			},
 		},

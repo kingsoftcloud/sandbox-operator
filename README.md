@@ -23,7 +23,7 @@ Sandbox Operator provides a Kubernetes-native way to manage [Kingsoft Cloud Sand
 The operator synchronizes resources in both directions:
 
 * **OpenAPI → Kubernetes**: The operator periodically polls the Sandbox OpenAPI and reflects template and instance state into the cluster as CRs.
-* **Kubernetes → OpenAPI**: Creating, updating, or deleting a CR invokes the corresponding Sandbox OpenAPI operation. Finalizers ensure cloud resources are cleaned up when the CR is deleted.
+* **Kubernetes → OpenAPI**: Creating, updating, or deleting `SandboxTemplate` and `Sandbox` CRs invokes the corresponding Sandbox OpenAPI operation. `SandboxClaim` is a one-shot creation declaration; deleting the claim does not delete already-created instances.
 
 ## Features
 
@@ -91,9 +91,10 @@ You can also look at the bundled sample in [`config/samples/sandbox_v1alpha1_sam
 
 | Document | Description |
 |----------|-------------|
-| [Deployment guide](docs/en/deployment.md) | Helm and raw-manifest installation, operator configuration, and credential setup. |
+| [Deployment guide](docs/en/deployment.md) | Image build, Helm and raw-manifest installation, operator configuration, and credential setup. |
 | [Usage guide](docs/en/usage.md) | Detailed workflows for OpenAPI↔Kubernetes sync and CR lifecycle. |
 | [CR examples](docs/en/cr-examples.md) | Secret, `SandboxTemplate`, `Sandbox`, inline-template, and `SandboxClaim` YAML examples. |
+| [Raw manifest resources](docs/en/deploy-manifests.md) | File-level explanation of `config/deploy` resources. |
 | [中文文档](docs/zh-CN/README.md) | Simplified Chinese documentation. |
 
 ## Operator Configuration

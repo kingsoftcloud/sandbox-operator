@@ -14,7 +14,7 @@ operator 会在以下方向做同步：
 
 - 用户创建、更新、删除 CR 时，同步调用 Sandbox OpenAPI。
 - 控制台或 OpenAPI 侧创建、修改、删除资源后，周期性同步回 Kubernetes CR。
-- 删除 CR 时通过 finalizer 删除对应 OpenAPI 资源。
+- 删除 `SandboxTemplate` 和 `Sandbox` CR 时通过 finalizer 删除对应 OpenAPI 资源。`SandboxClaim` 是一次性创建声明，删除 Claim 不会删除已创建出的实例。
 
 ## 语言
 

@@ -1,6 +1,6 @@
 # 原生 Kubernetes 部署资源
 
-本目录包含不依赖 Helm 的 operator 部署资源：
+原生 manifest 位于 `config/deploy/`，包含不依赖 Helm 的 operator 部署资源：
 
 - `00-namespace.yaml`：operator 命名空间。
 - `01-crd.yaml`：`SandboxTemplate`、`Sandbox`、`SandboxClaim` CRD。
@@ -12,15 +12,15 @@
 ## 应用顺序
 
 ```bash
-kubectl apply -f 00-namespace.yaml
-kubectl apply -f 01-crd.yaml
-kubectl apply -f 02-rbac.yaml
-kubectl apply -f 03-config.yaml
+kubectl apply -f config/deploy/00-namespace.yaml
+kubectl apply -f config/deploy/01-crd.yaml
+kubectl apply -f config/deploy/02-rbac.yaml
+kubectl apply -f config/deploy/03-config.yaml
 
 # webhook TLS Secret 和 caBundle 由 scripts/deploy.sh 自动生成和 patch。
 
-kubectl apply -f 04-manager.yaml
-kubectl apply -f 05-webhook.yaml
+kubectl apply -f config/deploy/04-manager.yaml
+kubectl apply -f config/deploy/05-webhook.yaml
 ```
 
 推荐直接使用 Makefile 目标：
