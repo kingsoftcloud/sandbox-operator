@@ -123,22 +123,52 @@ spec:
           name: image-credential
           server: hub-vpc-cn-beijing-6.kce.ksyun.com
 
-      # KEC、计算资源、系统盘和数据盘配置。
-      # 只要配置机型、系统盘或数据盘，就需要同时具备：
-      # instanceType、systemDisk.type、systemDisk.size。
+      # KEC 机型、系统盘和数据盘配置。
+      # cpu/memory 是全局资源字段。
+      # 推荐使用 instanceSpecs 配置一个或多个可选机型。
+      # instanceSpecs 中只配置机型、系统盘和数据盘。
       kecConfig:
         cpu: "2"
         memory: 4Gi
-        instanceType: S6.2A
-        systemDisk:
-          type: ESSD_SYSTEM_PL1
-          size: 20Gi
-        dataDisks:
-          - name: data-0
-            type: ESSD_PL1
-            sizeMB: 51200
-            deleteWithInstance: true
-            path: /root/tmp
+        instanceSpecs:
+          - instanceType: S6.2B
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                snapshotID: ""
+                fsType: ext4
+              - name: data-1
+                type: SSD3.0
+                size: 100Gi
+                deleteWithInstance: true
+                path: /data2
+                snapshotID: ""
+                fsType: ext4
+          - instanceType: S6.2A
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                snapshotID: ""
+                fsType: ext4
+              - name: data-1
+                type: SSD3.0
+                size: 100Gi
+                deleteWithInstance: true
+                path: /data2
+                snapshotID: ""
+                fsType: ext4
 
       # 容器端口。
       ports:
@@ -382,16 +412,29 @@ spec:
       kecConfig:
         cpu: "2"
         memory: 4Gi
-        instanceType: S6.2A
-        systemDisk:
-          type: ESSD_SYSTEM_PL1
-          size: 20Gi
-        dataDisks:
-          - name: data-0
-            type: ESSD_PL1
-            sizeMB: 51200
-            deleteWithInstance: true
-            path: /root/tmp
+        instanceSpecs:
+          - instanceType: S6.2B
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                fsType: ext4
+          - instanceType: S6.2A
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                fsType: ext4
 
       ports:
         - name: api

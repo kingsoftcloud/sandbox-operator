@@ -80,31 +80,39 @@ spec:
                               type: string
                             memory:
                               type: string
-                            instanceType:
-                              type: string
-                            systemDisk:
-                              type: object
-                              properties:
-                                type:
-                                  type: string
-                                size:
-                                  type: string
-                            dataDisks:
+                            instanceSpecs:
                               type: array
                               items:
                                 type: object
                                 properties:
-                                  name:
+                                  instanceType:
                                     type: string
-                                  type:
-                                    type: string
-                                  sizeMB:
-                                    type: integer
-                                    format: int64
-                                  deleteWithInstance:
-                                    type: boolean
-                                  path:
-                                    type: string
+                                  systemDisk:
+                                    type: object
+                                    properties:
+                                      type:
+                                        type: string
+                                      size:
+                                        type: string
+                                  dataDisks:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        name:
+                                          type: string
+                                        type:
+                                          type: string
+                                        size:
+                                          type: string
+                                        deleteWithInstance:
+                                          type: boolean
+                                        path:
+                                          type: string
+                                        snapshotID:
+                                          type: string
+                                        fsType:
+                                          type: string
                         ports:
                           type: array
                           items:

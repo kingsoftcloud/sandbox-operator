@@ -42,19 +42,72 @@ func TestSandboxSpecOnlyTimeoutChanged(t *testing.T) {
 	}
 }
 
-func TestValidateTemplateRequiresCompleteKecConfig(t *testing.T) {
+func TestValidateTemplateRequiresCompleteKecInstanceSpecs(t *testing.T) {
 	h := &Handler{}
 	obj := validTemplateForWebhook()
-	obj.Spec.Template.Spec.KecConfig.SystemDisk = &sandboxv1.SystemDiskSpec{Size: resource.MustParse("80Gi")}
-
-	if err := h.validateTemplate(obj); err == nil {
-		t.Fatalf("disk without kec instanceType/systemDiskType should be rejected")
+	obj.Spec.Template.Spec.KecConfig = &sandboxv1.RuntimeKecConfig{
+		InstanceSpecs: []sandboxv1.KecInstanceSpec{{InstanceType: "S6.2B"}},
 	}
 
-	obj.Spec.Template.Spec.KecConfig.InstanceType = "N3.2B"
-	obj.Spec.Template.Spec.KecConfig.SystemDisk.Type = "ESSD_PL0"
+	if err := h.validateTemplate(obj); err == nil {
+		t.Fatalf("instanceSpecs without systemDisk should be rejected")
+	}
+
+	obj.Spec.Template.Spec.KecConfig.InstanceSpecs[0].SystemDisk = &sandboxv1.SystemDiskSpec{Type: "SSD3.0", Size: resource.MustParse("20Gi")}
 	if err := h.validateTemplate(obj); err != nil {
-		t.Fatalf("complete kec config should be accepted: %v", err)
+		t.Fatalf("complete instanceSpecs should be accepted: %v", err)
+	}
+}
+
+func TestValidateTemplateAllowsGlobalResourcesWithKecInstanceSpecs(t *testing.T) {
+	h := &Handler{}
+	obj := validTemplateForWebhook()
+	memory := resource.MustParse("4Gi")
+	obj.Spec.Template.Spec.KecConfig = &sandboxv1.RuntimeKecConfig{
+		CPU:    "2",
+		Memory: memory,
+		InstanceSpecs: []sandboxv1.KecInstanceSpec{{
+			InstanceType: "S6.2B",
+			SystemDisk:   &sandboxv1.SystemDiskSpec{Type: "SSD3.0", Size: resource.MustParse("20Gi")},
+		}},
+	}
+
+	if err := h.validateTemplate(obj); err != nil {
+		t.Fatalf("global cpu/memory should be accepted with instanceSpecs: %v", err)
+	}
+}
+
+func TestValidateNoUnsupportedKecConfigFieldsRaw(t *testing.T) {
+	raw := []byte(`{
+		"spec": {
+			"template": {
+				"spec": {
+					"kecConfig": {
+						"cpu": "2",
+						"instanceType": "S6.2B"
+					}
+				}
+			}
+		}
+	}`)
+	if err := validateNoUnsupportedKecConfigFieldsRaw(raw); err == nil {
+		t.Fatalf("direct kecConfig.instanceType should be rejected")
+	}
+
+	allowed := []byte(`{
+		"spec": {
+			"template": {
+				"spec": {
+					"kecConfig": {
+						"cpu": "2",
+						"instanceSpecs": [{"instanceType": "S6.2B"}]
+					}
+				}
+			}
+		}
+	}`)
+	if err := validateNoUnsupportedKecConfigFieldsRaw(allowed); err != nil {
+		t.Fatalf("instanceSpecs should be accepted: %v", err)
 	}
 }
 

@@ -110,11 +110,15 @@ type SkillConfig struct {
 }
 
 type RuntimeKecConfig struct {
-	CPU          string            `json:"cpu,omitempty"`
-	Memory       resource.Quantity `json:"memory,omitempty"`
-	InstanceType string            `json:"instanceType,omitempty"`
-	SystemDisk   *SystemDiskSpec   `json:"systemDisk,omitempty"`
-	DataDisks    []DataDiskSpec    `json:"dataDisks,omitempty"`
+	CPU           string            `json:"cpu,omitempty"`
+	Memory        resource.Quantity `json:"memory,omitempty"`
+	InstanceSpecs []KecInstanceSpec `json:"instanceSpecs,omitempty"`
+}
+
+type KecInstanceSpec struct {
+	InstanceType string          `json:"instanceType,omitempty"`
+	SystemDisk   *SystemDiskSpec `json:"systemDisk,omitempty"`
+	DataDisks    []DataDiskSpec  `json:"dataDisks,omitempty"`
 }
 
 type SystemDiskSpec struct {
@@ -123,11 +127,13 @@ type SystemDiskSpec struct {
 }
 
 type DataDiskSpec struct {
-	Name               string `json:"name,omitempty"`
-	Type               string `json:"type,omitempty"`
-	SizeMB             int64  `json:"sizeMB,omitempty"`
-	DeleteWithInstance bool   `json:"deleteWithInstance,omitempty"`
-	Path               string `json:"path,omitempty"`
+	Name               string            `json:"name,omitempty"`
+	Type               string            `json:"type,omitempty"`
+	Size               resource.Quantity `json:"size,omitempty"`
+	DeleteWithInstance bool              `json:"deleteWithInstance,omitempty"`
+	Path               string            `json:"path,omitempty"`
+	SnapshotID         string            `json:"snapshotID,omitempty"`
+	FsType             string            `json:"fsType,omitempty"`
 }
 
 type TemplatePoolSpec struct {

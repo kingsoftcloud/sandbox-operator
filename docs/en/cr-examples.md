@@ -124,22 +124,52 @@ spec:
           name: image-credential
           server: hub-vpc-cn-beijing-6.kce.ksyun.com
 
-      # KEC, compute, system disk, and data disk configuration.
-      # If instanceType, systemDisk, or dataDisks is configured, instanceType,
-      # systemDisk.type, and systemDisk.size must all be provided.
+      # KEC instance type, system disk, and data disk configuration.
+      # cpu/memory are global resource fields.
+      # Use instanceSpecs to configure one or more candidate instance types.
+      # instanceSpecs only contains instance type, system disk, and data disks.
       kecConfig:
         cpu: "2"
         memory: 4Gi
-        instanceType: S6.2A
-        systemDisk:
-          type: ESSD_SYSTEM_PL1
-          size: 20Gi
-        dataDisks:
-          - name: data-0
-            type: ESSD_PL1
-            sizeMB: 51200
-            deleteWithInstance: true
-            path: /root/tmp
+        instanceSpecs:
+          - instanceType: S6.2B
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                snapshotID: ""
+                fsType: ext4
+              - name: data-1
+                type: SSD3.0
+                size: 100Gi
+                deleteWithInstance: true
+                path: /data2
+                snapshotID: ""
+                fsType: ext4
+          - instanceType: S6.2A
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                snapshotID: ""
+                fsType: ext4
+              - name: data-1
+                type: SSD3.0
+                size: 100Gi
+                deleteWithInstance: true
+                path: /data2
+                snapshotID: ""
+                fsType: ext4
 
       # Container ports.
       ports:
@@ -383,16 +413,29 @@ spec:
       kecConfig:
         cpu: "2"
         memory: 4Gi
-        instanceType: S6.2A
-        systemDisk:
-          type: ESSD_SYSTEM_PL1
-          size: 20Gi
-        dataDisks:
-          - name: data-0
-            type: ESSD_PL1
-            sizeMB: 51200
-            deleteWithInstance: true
-            path: /root/tmp
+        instanceSpecs:
+          - instanceType: S6.2B
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                fsType: ext4
+          - instanceType: S6.2A
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                fsType: ext4
 
       ports:
         - name: api

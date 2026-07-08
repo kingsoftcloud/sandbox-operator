@@ -112,6 +112,9 @@ func (h *Handler) handleTemplate(ctx context.Context, req admission.Request) adm
 		if err := h.Decoder.Decode(req, &obj); err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
 		}
+		if err := validateNoUnsupportedKecConfigFieldsRaw(req.Object.Raw); err != nil {
+			return admission.Denied(err.Error())
+		}
 		if err := h.validateTemplate(&obj); err != nil {
 			return admission.Denied(err.Error())
 		}
@@ -121,6 +124,9 @@ func (h *Handler) handleTemplate(ctx context.Context, req admission.Request) adm
 		var old sandboxv1.SandboxTemplate
 		if err := h.Decoder.Decode(req, &obj); err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
+		}
+		if err := validateNoUnsupportedKecConfigFieldsRaw(req.Object.Raw); err != nil {
+			return admission.Denied(err.Error())
 		}
 		if err := h.decodeOld(req, &old); err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
@@ -146,15 +152,6 @@ func (h *Handler) handleTemplate(ctx context.Context, req admission.Request) adm
 			return admission.Denied(err.Error())
 		}
 		updateReq := mapper.TemplateUpdateRequestFromDiff(&obj, &old, runtimeCreds)
-		if updateReq.KecConfig != nil && updateReq.KecConfig.Enabled {
-			remote, err := h.OpenAPI.GetTemplate(ctx, mapper.OpenAPICredential(cred), templateID)
-			if err != nil {
-				return admission.Denied(err.Error())
-			}
-			if err := mapper.CompleteTemplateUpdateRequestFromRemote(&updateReq, *remote); err != nil {
-				return admission.Denied(err.Error())
-			}
-		}
 		if mapper.TemplateRequestNeedsStorageCredential(updateReq) && (updateReq.AccessKey == "" || updateReq.SecretAccessKey == "") {
 			return admission.Denied("updating KS3/KPFS mount config requires a credentialRef that points to a Secret with accessKey and secretAccessKey")
 		}
@@ -185,6 +182,9 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 		var obj sandboxv1.Sandbox
 		if err := h.Decoder.Decode(req, &obj); err != nil {
 			return admission.Errored(http.StatusBadRequest, err)
+		}
+		if err := validateNoUnsupportedKecConfigFieldsRaw(req.Object.Raw); err != nil {
+			return admission.Denied(err.Error())
 		}
 		if err := h.validateSandboxTemplateSource(&obj); err != nil {
 			return admission.Denied(err.Error())
@@ -266,6 +266,9 @@ func (h *Handler) mutateTemplateCreate(ctx context.Context, req admission.Reques
 	if err := h.Decoder.Decode(req, &obj); err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
+	if err := validateNoUnsupportedKecConfigFieldsRaw(req.Object.Raw); err != nil {
+		return admission.Denied(err.Error())
+	}
 	if err := h.validateNoReservedAnnotations(&obj); err != nil {
 		return admission.Denied(err.Error())
 	}
@@ -288,6 +291,9 @@ func (h *Handler) mutateSandboxCreate(ctx context.Context, req admission.Request
 	var obj sandboxv1.Sandbox
 	if err := h.Decoder.Decode(req, &obj); err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
+	}
+	if err := validateNoUnsupportedKecConfigFieldsRaw(req.Object.Raw); err != nil {
+		return admission.Denied(err.Error())
 	}
 	if err := h.validateNoReservedAnnotations(&obj); err != nil {
 		return admission.Denied(err.Error())
@@ -463,18 +469,54 @@ func (h *Handler) validateTemplate(obj *sandboxv1.SandboxTemplate) error {
 		if templateAccessIsPublic(obj.Spec.Access) && tpl.Pool != nil {
 			return fmt.Errorf("spec.template.spec.pool is not supported when spec.access is Public")
 		}
-		kec := tpl.KecConfig
-		hasInstanceType := kec != nil && kec.InstanceType != ""
-		hasSystemDiskType := kec != nil && kec.SystemDisk != nil && kec.SystemDisk.Type != ""
-		hasSystemDiskSize := kec != nil && kec.SystemDisk != nil && !kec.SystemDisk.Size.IsZero()
-		hasDataDisks := kec != nil && len(kec.DataDisks) > 0
-		if hasInstanceType || hasSystemDiskType || hasSystemDiskSize || hasDataDisks {
-			if !hasInstanceType || !hasSystemDiskType || !hasSystemDiskSize {
-				return fmt.Errorf("KEC config requires spec.template.spec.kecConfig.instanceType, spec.template.spec.kecConfig.systemDisk.type, and spec.template.spec.kecConfig.systemDisk.size")
+		if err := validateKecConfig(tpl.KecConfig); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateKecConfig(kec *sandboxv1.RuntimeKecConfig) error {
+	if kec == nil {
+		return nil
+	}
+	if len(kec.InstanceSpecs) > 0 {
+		for _, spec := range kec.InstanceSpecs {
+			if spec.InstanceType == "" || spec.SystemDisk == nil || spec.SystemDisk.Type == "" || spec.SystemDisk.Size.IsZero() {
+				return fmt.Errorf("KEC instance spec requires spec.template.spec.kecConfig.instanceSpecs[].instanceType, systemDisk.type, and systemDisk.size")
 			}
 		}
 	}
 	return nil
+}
+
+func validateNoUnsupportedKecConfigFieldsRaw(raw []byte) error {
+	var obj map[string]any
+	if len(raw) == 0 || json.Unmarshal(raw, &obj) != nil {
+		return nil
+	}
+	kec, ok := nestedMap(obj, "spec", "template", "spec", "kecConfig")
+	if !ok {
+		return nil
+	}
+	for _, key := range []string{"instanceType", "systemDisk", "dataDisks"} {
+		if _, exists := kec[key]; exists {
+			return fmt.Errorf("spec.template.spec.kecConfig.%s is not supported; use spec.template.spec.kecConfig.instanceSpecs[]", key)
+		}
+	}
+	return nil
+}
+
+func nestedMap(root map[string]any, path ...string) (map[string]any, bool) {
+	current := root
+	for _, key := range path {
+		next, ok := current[key].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current = next
+	}
+	return current, true
 }
 
 func (h *Handler) validateTemplateDelete(ctx context.Context, obj *sandboxv1.SandboxTemplate) error {

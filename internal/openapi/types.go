@@ -41,7 +41,6 @@ type Template struct {
 	InstanceQuota                int                  `json:"InstanceQuota,omitempty"`
 	RemainingInstanceQuota       int                  `json:"RemainingInstanceQuota,omitempty"`
 	RemainingSystemInstanceQuota int                  `json:"RemainingSystemInstanceQuota,omitempty"`
-	DiskSizeGB                   int64                `json:"DiskSize,omitempty"`
 	CredentialAccessKeyIDMasked  string               `json:"CredentialAccessKeyIDMasked,omitempty"`
 	CustomConfiguration          *CustomConfiguration `json:"CustomConfiguration,omitempty"`
 }
@@ -79,16 +78,6 @@ func (t Template) PreheatedInstanceNumber() int {
 		return 0
 	}
 	return t.PreheatConfig.PreheatedInstanceNumber
-}
-
-func (t Template) DiskSizeMB() int64 {
-	if t.KecConfig != nil && t.KecConfig.SystemDiskSizeGB > 0 {
-		return t.KecConfig.SystemDiskSizeGB * 1024
-	}
-	if t.DiskSizeGB > 0 {
-		return t.DiskSizeGB * 1024
-	}
-	return 0
 }
 
 type Sandbox struct {
@@ -205,6 +194,21 @@ type DataDisk struct {
 	SizeGB             int64  `json:"Size,omitempty"`
 	DeleteWithInstance bool   `json:"DeleteWithInstance,omitempty"`
 	Path               string `json:"Path,omitempty"`
+	SnapshotID         string `json:"SnapshotID,omitempty"`
+	FsType             string `json:"FsType,omitempty"`
+}
+
+type SystemDisk struct {
+	Type   string `json:"Type,omitempty"`
+	SizeGB int64  `json:"Size,omitempty"`
+}
+
+type InstanceSpec struct {
+	InstanceType string      `json:"InstanceType,omitempty"`
+	CPU          int         `json:"Cpu,omitempty"`
+	Memory       int         `json:"Memory,omitempty"`
+	SystemDisk   *SystemDisk `json:"SystemDisk,omitempty"`
+	DataDisks    []DataDisk  `json:"DataDisks,omitempty"`
 }
 
 type ImageConfig struct {
@@ -220,11 +224,8 @@ type ImageConfig struct {
 }
 
 type KecConfig struct {
-	Enabled          bool       `json:"KecEnable,omitempty"`
-	InstanceType     string     `json:"InstanceType,omitempty"`
-	SystemDiskType   string     `json:"SystemDiskType,omitempty"`
-	SystemDiskSizeGB int64      `json:"SystemDiskSize,omitempty"`
-	DataDisks        []DataDisk `json:"DataDisks,omitempty"`
+	Enabled       bool           `json:"KecEnable,omitempty"`
+	InstanceSpecs []InstanceSpec `json:"InstanceSpecs,omitempty"`
 }
 
 type PreheatConfig struct {
