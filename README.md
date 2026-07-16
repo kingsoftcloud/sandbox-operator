@@ -50,17 +50,16 @@ Using Helm:
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \
   -n sandbox-operator-system \
-  --create-namespace \
-  --set image.repository=my-registry/sandbox-operator \
-  --set image.tag=latest
+  --create-namespace
 ```
 
 Or use the raw manifests:
 
 ```bash
-make docker-build IMG=my-registry/sandbox-operator:latest
-make deploy IMG=my-registry/sandbox-operator:latest
+make deploy
 ```
+
+Both commands use the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707` and do not require an image-pull credential. To build and use your own image, see the [deployment guide](docs/en/deployment.md).
 
 ### 2. Create OpenAPI credentials in a business namespace
 
@@ -103,7 +102,7 @@ The operator is configured via the `sandbox-operator-config` ConfigMap in the `s
 
 | Name | Default | Description |
 |------|---------|-------------|
-| `OPENAPI_BASE_URL` | `http://aicp.cn-beijing-6.inner.api.ksyun.com` | Sandbox OpenAPI base URL. |
+| `OPENAPI_BASE_URL` | `http://aicp.cn-beijing-6.api.ksyun.com` | Sandbox OpenAPI base URL. Ksyun internal accounts can use `http://aicp.cn-beijing-6.inner.api.ksyun.com`. |
 | `OPENAPI_AUTH_MODE` | `kop-sigv4` | OpenAPI authentication mode. |
 | `OPENAPI_SERVICE` | `aicp` | KOP service name. |
 | `OPENAPI_VERSION` | `2026-04-01` | OpenAPI version. |
@@ -155,7 +154,7 @@ make lint
 Build the container image:
 
 ```bash
-make docker-build IMG=sandbox-operator:latest
+make docker-build IMG=my-registry.example.com/sandbox-operator:v0.1.0
 ```
 
 ## Contributing

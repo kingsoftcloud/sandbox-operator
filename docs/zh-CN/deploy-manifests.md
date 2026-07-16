@@ -9,25 +9,24 @@
 - `04-manager.yaml`：operator Deployment。
 - `05-webhook.yaml`：webhook Service、MutatingWebhookConfiguration、ValidatingWebhookConfiguration。
 
-## 应用顺序
+## 部署
+
+在仓库根目录执行：
 
 ```bash
-kubectl apply -f config/deploy/00-namespace.yaml
-kubectl apply -f config/deploy/01-crd.yaml
-kubectl apply -f config/deploy/02-rbac.yaml
-kubectl apply -f config/deploy/03-config.yaml
-
-# webhook TLS Secret 和 caBundle 由 scripts/deploy.sh 自动生成和 patch。
-
-kubectl apply -f config/deploy/04-manager.yaml
-kubectl apply -f config/deploy/05-webhook.yaml
+make deploy
 ```
 
-推荐直接使用 Makefile 目标：
+该命令会按正确顺序应用这些资源，创建 webhook TLS Secret 并写入 webhook CA bundle。默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`，无需配置镜像拉取凭据。若使用自行构建的镜像，可在部署时覆盖：
 
 ```bash
-make docker-build IMG=sandbox-operator:latest
-make deploy IMG=sandbox-operator:latest
+make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
+```
+
+若该镜像仓库为私有仓库，先在 `sandbox-operator-system` 命名空间创建 image pull Secret，再追加 `IMAGE_PULL_SECRET=<SECRET_NAME>`：
+
+```bash
+make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
 ```
 
 卸载：
@@ -66,10 +65,10 @@ config/credentials/credentials.example.yaml
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \
   -n sandbox-operator-system \
-  --create-namespace \
-  --set image.repository=sandbox-operator \
-  --set image.tag=latest
+  --create-namespace
 ```
+
+如需使用自定义镜像，追加 `--set image.repository=my-registry.example.com/sandbox-operator --set image.tag=v0.1.0`。
 
 Chart 默认使用 Helm 模板生成自签 webhook 证书。若要使用 cert-manager：
 

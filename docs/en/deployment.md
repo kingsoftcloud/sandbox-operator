@@ -1,100 +1,51 @@
-# Deployment Guide
+# Deploy Sandbox Operator
 
-This guide describes the deployment files, image build process, and supported installation methods for Sandbox Operator.
+The default public image is `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`; no registry credential is required.
 
-## 1. Deployment File Layout
+## Quick Install
 
-The repository provides two deployment paths: Helm and raw Kubernetes manifests.
+From the repository root, choose one of the following installation methods.
 
-| Path | Description |
-| --- | --- |
-| `Dockerfile` | Builds the operator image. |
-| `Makefile` | Common build, test, image, deploy, and undeploy targets. |
-| `scripts/build-image.sh` | Script used by `make docker-build` to build the image with Docker. |
-| `scripts/deploy.sh` | Raw-manifest deployment script used by `make deploy`; it also generates and patches webhook certificates. |
-| `scripts/undeploy.sh` | Raw-manifest uninstall script used by `make undeploy`. |
-| `charts/sandbox-operator/` | Helm Chart, recommended for regular installation and upgrades. |
-| `charts/sandbox-operator/values.yaml` | Helm values for image, replicas, resources, OpenAPI config, webhook TLS, and leader election. |
-| `config/deploy/` | Raw Kubernetes manifests used by `scripts/deploy.sh`. |
-| `config/credentials/credentials.example.yaml` | Example Secrets for OpenAPI, storage, and image registry credentials. |
-| `config/samples/` | Example CRs. |
-
-Raw manifest files under `config/deploy/` are:
-
-| File | Description |
-| --- | --- |
-| `00-namespace.yaml` | Operator namespace. |
-| `01-crd.yaml` | CRDs for `SandboxTemplate`, `Sandbox`, and `SandboxClaim`. |
-| `02-rbac.yaml` | ServiceAccount, ClusterRole, and ClusterRoleBinding. |
-| `03-config.yaml` | Operator ConfigMap. |
-| `04-manager.yaml` | Operator Deployment. |
-| `05-webhook.yaml` | Webhook Service, MutatingWebhookConfiguration, and ValidatingWebhookConfiguration. |
-
-## 2. Build the Image
-
-Build and tag the operator image before installing it:
+### Helm
 
 ```bash
-make docker-build IMG=<IMAGE>
+helm upgrade --install sandbox-operator charts/sandbox-operator \
+  -n sandbox-operator-system \
+  --create-namespace
 ```
 
-Example:
+### Raw Manifests
+
+For environments that do not use Helm:
 
 ```bash
-make docker-build IMG=my-registry.example.com/sandbox/sandbox-operator:v0.1.3
+make deploy
 ```
 
-The Makefile target calls:
+This creates the CRDs, RBAC, ConfigMap, Deployment, and webhook resources; it also creates the webhook TLS certificate and waits for the Deployment.
 
-```bash
-./scripts/build-image.sh <IMAGE>
-```
+## Requirements
 
-The script runs `docker build -t <IMAGE> .` using the repository `Dockerfile`.
+- The cluster can access the public registry and Sandbox OpenAPI.
+- Helm deployment requires `helm` and `kubectl`.
+- Raw-manifest deployment requires `make`, `bash`, `kubectl`, and `openssl`.
 
-If the cluster cannot pull from your local Docker daemon, push the image to a registry reachable by the cluster:
+## Internal OpenAPI Endpoint
 
-```bash
-make docker-push IMG=my-registry.example.com/sandbox/sandbox-operator:v0.1.3
-```
-
-If the registry is private, create an image pull Secret in the operator namespace before deploying:
-
-```bash
-kubectl create namespace sandbox-operator-system
-
-kubectl -n sandbox-operator-system create secret docker-registry sandbox-operator-image-pull \
-  --docker-server='<REGISTRY_SERVER>' \
-  --docker-username='<REGISTRY_USERNAME>' \
-  --docker-password='<REGISTRY_PASSWORD>'
-```
-
-## 3. Deploy with Helm
-
-Helm is the recommended installation method.
+For Ksyun internal accounts, add the internal OpenAPI endpoint to the Helm command:
 
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \
   -n sandbox-operator-system \
   --create-namespace \
-  --set image.repository=my-registry.example.com/sandbox/sandbox-operator \
-  --set image.tag=v0.1.3
+  --set config.openapiBaseURL=http://aicp.cn-beijing-6.inner.api.ksyun.com
 ```
 
-For a private image registry, configure the pull Secret:
+For raw manifests, change `OPENAPI_BASE_URL` in [03-config.yaml](../../config/deploy/03-config.yaml) to `http://aicp.cn-beijing-6.inner.api.ksyun.com`, then run `make deploy` again.
 
-```bash
-helm upgrade --install sandbox-operator charts/sandbox-operator \
-  -n sandbox-operator-system \
-  --create-namespace \
-  --set image.repository=my-registry.example.com/sandbox/sandbox-operator \
-  --set image.tag=v0.1.3 \
-  --set imagePullSecrets[0].name=sandbox-operator-image-pull
-```
+## Webhook Certificates
 
-By default, the chart generates a self-signed webhook certificate using Helm templates.
-
-If cert-manager is already installed, you can let cert-manager generate the certificate instead:
+Helm generates a self-signed webhook certificate by default. To use an existing cert-manager installation:
 
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \
@@ -104,75 +55,18 @@ helm upgrade --install sandbox-operator charts/sandbox-operator \
   --set webhook.selfSigned.enabled=false
 ```
 
-To override OpenAPI and poller settings, either edit `charts/sandbox-operator/values.yaml` or pass `--set` values:
+## Verify
 
 ```bash
-helm upgrade --install sandbox-operator charts/sandbox-operator \
-  -n sandbox-operator-system \
-  --create-namespace \
-  --set config.pollInterval=30s \
-  --set config.pollPageSize=100 \
-  --set config.maxConcurrentNamespaces=5
+kubectl rollout status deployment/sandbox-operator -n sandbox-operator-system
+kubectl get pods -n sandbox-operator-system
+kubectl get crd sandboxtemplates.sandbox.kce.ksyun.com
+kubectl logs -n sandbox-operator-system deploy/sandbox-operator
 ```
 
-## 4. Deploy with Raw Manifests
+## Business Namespace Credentials
 
-Raw-manifest deployment is useful for simple environments or when Helm is unavailable.
-
-```bash
-make deploy IMG=my-registry.example.com/sandbox/sandbox-operator:v0.1.3
-```
-
-This calls `scripts/deploy.sh`, which performs the following steps:
-
-1. Applies the CRD, RBAC, ConfigMap, Deployment, and webhook configuration files under `config/deploy`.
-2. Generates a self-signed CA and serving certificate with `openssl`.
-3. Creates the `sandbox-operator-webhook-server-cert` Secret.
-4. Patches the CA bundle into the webhook configurations.
-5. Waits for the operator Deployment to become ready.
-
-Uninstall:
-
-```bash
-make undeploy
-```
-
-For a detailed description of raw manifests, see [Raw Kubernetes deployment resources](deploy-manifests.md).
-
-## 5. What Is Deployed
-
-Sandbox Operator installs the following Kubernetes resources:
-
-* `Namespace`: `sandbox-operator-system` by default.
-* CRDs: `SandboxTemplate`, `Sandbox`, `SandboxClaim`.
-* RBAC: ServiceAccount, ClusterRole, and ClusterRoleBinding used by the operator.
-* ConfigMap: operator configuration.
-* Deployment: operator manager.
-* Service: webhook service.
-* `MutatingWebhookConfiguration`: calls OpenAPI and injects platform IDs on CR creation.
-* `ValidatingWebhookConfiguration`: validates CR updates and deletions.
-* Webhook TLS Secret: serving certificate for the webhook service.
-
-## 6. Operator Configuration
-
-Configuration is read from the `sandbox-operator-config` ConfigMap. When deploying with Helm, these values can be overridden in `values.yaml`.
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| `OPENAPI_BASE_URL` | `http://aicp.cn-beijing-6.inner.api.ksyun.com` | Sandbox OpenAPI base URL. |
-| `OPENAPI_AUTH_MODE` | `kop-sigv4` | OpenAPI signature mode. |
-| `OPENAPI_SERVICE` | `aicp` | KOP service. |
-| `OPENAPI_VERSION` | `2026-04-01` | OpenAPI version. |
-| `DEFAULT_OPENAPI_CREDENTIAL_SECRET` | `sandbox-openapi-credentials` | Default OpenAPI credential Secret name in business namespaces. |
-| `POLL_INTERVAL` | `30s` | OpenAPI polling interval. |
-| `POLL_PAGE_SIZE` | `100` | Page size for OpenAPI list calls. |
-| `MAX_CONCURRENT_NAMESPACES` | `5` | Number of namespaces synchronized concurrently. |
-| `SYNC_NAMESPACES` | *(empty)* | Namespace allowlist; if empty, namespaces containing the default OpenAPI credential Secret are discovered automatically. |
-| `LEADER_ELECT` | `true` | Enable leader election. |
-
-## 7. Create Business Namespace Credentials
-
-The operator synchronizes only business namespaces that contain a valid OpenAPI credential Secret.
+The operator manages only namespaces containing an OpenAPI credential Secret:
 
 ```bash
 kubectl create namespace sandbox-demo
@@ -184,23 +78,61 @@ kubectl -n sandbox-demo create secret generic sandbox-openapi-credentials \
   --from-literal=region='cn-beijing-6'
 ```
 
-Runtime credentials, such as KS3, KPFS, Klog, and image registry credentials, must also be placed in the same namespace as the business CRs.
+See [CR examples](cr-examples.md) for complete resource and credential examples.
 
-Full Secret examples are available in [CR examples](cr-examples.md) and [`config/credentials/credentials.example.yaml`](../../config/credentials/credentials.example.yaml).
+## Custom Image
 
-## 8. Verify the Deployment
-
-```bash
-kubectl get pods -n sandbox-operator-system
-kubectl get mutatingwebhookconfiguration sandbox-operator-mutating-webhook
-kubectl get validatingwebhookconfiguration sandbox-operator-validating-webhook
-kubectl get crd sandboxtemplates.sandbox.kce.ksyun.com
-kubectl get crd sandboxes.sandbox.kce.ksyun.com
-kubectl get crd sandboxclaims.sandbox.kce.ksyun.com
-```
-
-View logs:
+Build and push a custom image:
 
 ```bash
-kubectl logs -n sandbox-operator-system deploy/sandbox-operator
+make docker-build IMG=my-registry.example.com/sandbox-operator:v0.1.0
+make docker-push IMG=my-registry.example.com/sandbox-operator:v0.1.0
 ```
+
+Deploy it with raw manifests:
+
+```bash
+make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
+```
+
+Or override Helm values:
+
+```bash
+helm upgrade --install sandbox-operator charts/sandbox-operator \
+  -n sandbox-operator-system \
+  --create-namespace \
+  --set image.repository=my-registry.example.com/sandbox-operator \
+  --set image.tag=v0.1.0
+```
+
+For a private registry, first create an image pull Secret in the operator namespace:
+
+```bash
+kubectl create namespace sandbox-operator-system
+kubectl -n sandbox-operator-system create secret docker-registry sandbox-operator-image-pull \
+  --docker-server='<REGISTRY_SERVER>' \
+  --docker-username='<REGISTRY_USERNAME>' \
+  --docker-password='<REGISTRY_PASSWORD>'
+```
+
+Pass the Secret to a raw-manifest deployment:
+
+```bash
+make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
+```
+
+For Helm, add `--set imagePullSecrets[0].name=sandbox-operator-image-pull`.
+
+## Upgrade and Uninstall
+
+Repeat the install command to upgrade. To remove the operator:
+
+```bash
+# Helm
+helm uninstall sandbox-operator -n sandbox-operator-system
+
+# Raw manifests
+make undeploy
+```
+
+See [raw manifest resources](deploy-manifests.md) for manifest and webhook certificate details.

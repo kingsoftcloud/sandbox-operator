@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${IMAGE:-sandbox-operator:latest}"
+IMAGE="${IMAGE:-hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707}"
+IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-}"
 NAMESPACE="${NAMESPACE:-sandbox-operator-system}"
 SERVICE_NAME="${SERVICE_NAME:-sandbox-operator-webhook}"
 TLS_SECRET="${TLS_SECRET:-sandbox-operator-webhook-server-cert}"
@@ -77,6 +78,10 @@ kubectl apply -f config/deploy/03-config.yaml
 generate_webhook_cert
 kubectl apply -f config/deploy/04-manager.yaml
 kubectl -n "${NAMESPACE}" set image deployment/sandbox-operator manager="${IMAGE}"
+if [[ -n "${IMAGE_PULL_SECRET}" ]]; then
+  kubectl -n "${NAMESPACE}" patch deployment sandbox-operator --type=merge \
+    -p "{\"spec\":{\"template\":{\"spec\":{\"imagePullSecrets\":[{\"name\":\"${IMAGE_PULL_SECRET}\"}]}}}}"
+fi
 kubectl apply -f config/deploy/05-webhook.yaml
 patch_webhook_ca_bundle
 kubectl -n "${NAMESPACE}" rollout status deployment/sandbox-operator

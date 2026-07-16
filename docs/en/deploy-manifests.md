@@ -13,27 +13,24 @@ The manifest directory is `config/deploy/`:
 | `04-manager.yaml` | Operator Deployment. |
 | `05-webhook.yaml` | Webhook Service, MutatingWebhookConfiguration, and ValidatingWebhookConfiguration. |
 
-## Apply Order
+## Deploy
 
-When applying resources manually, use this order:
+From the repository root, run:
 
 ```bash
-kubectl apply -f config/deploy/00-namespace.yaml
-kubectl apply -f config/deploy/01-crd.yaml
-kubectl apply -f config/deploy/02-rbac.yaml
-kubectl apply -f config/deploy/03-config.yaml
-
-# The webhook TLS Secret and caBundle are generated and patched by scripts/deploy.sh.
-
-kubectl apply -f config/deploy/04-manager.yaml
-kubectl apply -f config/deploy/05-webhook.yaml
+make deploy
 ```
 
-Using the Makefile targets is recommended:
+The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`; no image-pull credential is required. To use your own image, override it at deployment time:
 
 ```bash
-make docker-build IMG=sandbox-operator:latest
-make deploy IMG=sandbox-operator:latest
+make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
+```
+
+For a private registry, create an image pull Secret in `sandbox-operator-system` and add `IMAGE_PULL_SECRET=<SECRET_NAME>`:
+
+```bash
+make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
 ```
 
 Uninstall:
@@ -74,10 +71,10 @@ For regular installation and upgrades, Helm is recommended:
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \
   -n sandbox-operator-system \
-  --create-namespace \
-  --set image.repository=sandbox-operator \
-  --set image.tag=latest
+  --create-namespace
 ```
+
+To use a custom image, add `--set image.repository=my-registry.example.com/sandbox-operator --set image.tag=v0.1.0`.
 
 The chart generates a self-signed webhook certificate by default. To use cert-manager:
 

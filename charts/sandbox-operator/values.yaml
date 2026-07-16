@@ -2,14 +2,15 @@ namespace: sandbox-operator-system
 createNamespace: false
 
 image:
-  repository: "sandbox-operator"
-  tag: "latest"
+  repository: "hub.kce.ksyun.com/ksyun-public/sandbox-operator"
+  tag: "v20260707"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 
 config:
-  openapiBaseURL: http://aicp.cn-beijing-6.inner.api.ksyun.com
+  # 金山云内部账号可改用内网地址：http://aicp.cn-beijing-6.inner.api.ksyun.com
+  openapiBaseURL: http://aicp.cn-beijing-6.api.ksyun.com
   openapiAuthMode: kop-sigv4
   openapiService: aicp
   openapiVersion: "2026-04-01"

@@ -3,8 +3,10 @@
 # Provides common development and deployment tasks for the operator.
 # Existing scripts under `scripts/` are still used internally by several targets.
 
-# Image name used by docker-build and deploy targets.
-IMG ?= sandbox-operator:latest
+# Public image used by deploy targets. Override IMG to deploy a self-built image.
+IMG ?= hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707
+# Optional image pull Secret used by the raw-manifest deploy target.
+IMAGE_PULL_SECRET ?=
 
 # Go build settings
 GOOS ?= linux
@@ -41,7 +43,7 @@ lint: fmt vet ## Run formatting and vet checks.
 
 ##@ Build
 
-docker-build: ## Build the container image (IMG defaults to sandbox-operator:latest).
+docker-build: ## Build the container image (override IMG to choose the target image).
 	./scripts/build-image.sh $(IMG)
 
 docker-push: ## Push the container image.
@@ -49,8 +51,8 @@ docker-push: ## Push the container image.
 
 ##@ Deployment
 
-deploy: ## Deploy the operator to the cluster using raw manifests (set IMG).
-	IMAGE=$(IMG) ./scripts/deploy.sh
+deploy: ## Deploy the operator to the cluster using raw manifests.
+	IMAGE=$(IMG) IMAGE_PULL_SECRET=$(IMAGE_PULL_SECRET) ./scripts/deploy.sh
 
 undeploy: ## Undeploy the operator from the cluster.
 	./scripts/undeploy.sh

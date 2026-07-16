@@ -16,7 +16,7 @@ spec:
       serviceAccountName: sandbox-operator
       containers:
         - name: manager
-          image: sandbox-operator:latest
+          image: hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707
           envFrom:
             - configMapRef:
                 name: sandbox-operator-config

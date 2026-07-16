@@ -48,7 +48,7 @@ func main() {
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", envOrDefault("METRICS_BIND_ADDRESS", ":8080"), "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", envOrDefault("HEALTH_PROBE_BIND_ADDRESS", ":8081"), "The address the probe endpoint binds to.")
-	flag.StringVar(&openapiBaseURL, "openapi-base-url", envOrDefault("OPENAPI_BASE_URL", "http://aicp.cn-beijing-6.inner.api.ksyun.com"), "Sandbox OpenAPI base URL.")
+	flag.StringVar(&openapiBaseURL, "openapi-base-url", envOrDefault("OPENAPI_BASE_URL", "http://aicp.cn-beijing-6.api.ksyun.com"), "Sandbox OpenAPI base URL. Ksyun internal accounts can use http://aicp.cn-beijing-6.inner.api.ksyun.com.")
 	flag.StringVar(&openapiService, "openapi-service", envOrDefault("OPENAPI_SERVICE", "aicp"), "Sandbox OpenAPI KOP service name.")
 	flag.StringVar(&openapiVersion, "openapi-version", envOrDefault("OPENAPI_VERSION", "2026-04-01"), "Sandbox OpenAPI version.")
 	flag.StringVar(&openapiAuthMode, "openapi-auth-mode", envOrDefault("OPENAPI_AUTH_MODE", "kop-sigv4"), "OpenAPI auth mode: direct or kop-sigv4.")
