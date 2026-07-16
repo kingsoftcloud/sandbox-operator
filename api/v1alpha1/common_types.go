@@ -93,14 +93,14 @@ type TemplateEnvVar struct {
 }
 
 type OpenAPINetworkConfig struct {
-	EnablePublic       bool   `json:"enablePublic,omitempty"`
-	EnablePrivate      bool   `json:"enablePrivate,omitempty"`
-	CIDRBlock          string `json:"cidrBlock,omitempty"`
-	ChangeDefaultRoute bool   `json:"changeDefaultRoute,omitempty"`
-	UserVpcID          string `json:"userVpcId,omitempty"`
-	UserSgID           string `json:"userSgId,omitempty"`
-	UserSubnetID       string `json:"userSubnetId,omitempty"`
-	AvailabilityZone   string `json:"availabilityZone,omitempty"`
+	EnablePublic               bool   `json:"enablePublic,omitempty"`
+	EnablePrivate              bool   `json:"enablePrivate,omitempty"`
+	CIDRBlock                  string `json:"cidrBlock,omitempty"`
+	SharedInternetAccessEnable bool   `json:"sharedInternetAccessEnable,omitempty"`
+	UserVpcID                  string `json:"userVpcId,omitempty"`
+	UserSgID                   string `json:"userSgId,omitempty"`
+	UserSubnetID               string `json:"userSubnetId,omitempty"`
+	AvailabilityZone           string `json:"availabilityZone,omitempty"`
 }
 
 type SkillConfig struct {
@@ -110,11 +110,15 @@ type SkillConfig struct {
 }
 
 type RuntimeKecConfig struct {
-	CPU          string            `json:"cpu,omitempty"`
-	Memory       resource.Quantity `json:"memory,omitempty"`
-	InstanceType string            `json:"instanceType,omitempty"`
-	SystemDisk   *SystemDiskSpec   `json:"systemDisk,omitempty"`
-	DataDisks    []DataDiskSpec    `json:"dataDisks,omitempty"`
+	CPU           string            `json:"cpu,omitempty"`
+	Memory        resource.Quantity `json:"memory,omitempty"`
+	InstanceSpecs []KecInstanceSpec `json:"instanceSpecs,omitempty"`
+}
+
+type KecInstanceSpec struct {
+	InstanceType string          `json:"instanceType,omitempty"`
+	SystemDisk   *SystemDiskSpec `json:"systemDisk,omitempty"`
+	DataDisks    []DataDiskSpec  `json:"dataDisks,omitempty"`
 }
 
 type SystemDiskSpec struct {
@@ -123,11 +127,12 @@ type SystemDiskSpec struct {
 }
 
 type DataDiskSpec struct {
-	Name               string `json:"name,omitempty"`
-	Type               string `json:"type,omitempty"`
-	SizeMB             int64  `json:"sizeMB,omitempty"`
-	DeleteWithInstance bool   `json:"deleteWithInstance,omitempty"`
-	Path               string `json:"path,omitempty"`
+	Name               string            `json:"name,omitempty"`
+	Type               string            `json:"type,omitempty"`
+	Size               resource.Quantity `json:"size,omitempty"`
+	DeleteWithInstance bool              `json:"deleteWithInstance,omitempty"`
+	Path               string            `json:"path,omitempty"`
+	FsType             string            `json:"fsType,omitempty"`
 }
 
 type TemplatePoolSpec struct {

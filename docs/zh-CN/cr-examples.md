@@ -123,22 +123,36 @@ spec:
           name: image-credential
           server: hub-vpc-cn-beijing-6.kce.ksyun.com
 
-      # KEC、计算资源、系统盘和数据盘配置。
-      # 只要配置机型、系统盘或数据盘，就需要同时具备：
-      # instanceType、systemDisk.type、systemDisk.size。
+      # KEC 机型、系统盘和数据盘配置。
+      # cpu/memory 是全局资源字段。
+      # 推荐使用 instanceSpecs 配置一个或多个可选机型。
+      # instanceSpecs 中只配置机型、系统盘和数据盘。
       kecConfig:
         cpu: "2"
         memory: 4Gi
-        instanceType: S6.2A
-        systemDisk:
-          type: ESSD_SYSTEM_PL1
-          size: 20Gi
-        dataDisks:
-          - name: data-0
-            type: ESSD_PL1
-            sizeMB: 51200
-            deleteWithInstance: true
-            path: /root/tmp
+        instanceSpecs:
+          - instanceType: S6.2B
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                fsType: ext4
+          - instanceType: S6.2A
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                fsType: ext4
 
       # 容器端口。
       ports:
@@ -192,7 +206,7 @@ spec:
         enablePublic: true
         enablePrivate: true
         cidrBlock: "10.0.2.0/24"
-        changeDefaultRoute: true
+        sharedInternetAccessEnable: true
         userVpcId: 3c9d8253-778e-468a-b18d-6670c5204904
         userSgId: 4fc47f84-c5e1-43df-8b7a-5e838f18f793
         userSubnetId: a7cf00fb-87cd-4615-8d11-af131472245e
@@ -382,16 +396,29 @@ spec:
       kecConfig:
         cpu: "2"
         memory: 4Gi
-        instanceType: S6.2A
-        systemDisk:
-          type: ESSD_SYSTEM_PL1
-          size: 20Gi
-        dataDisks:
-          - name: data-0
-            type: ESSD_PL1
-            sizeMB: 51200
-            deleteWithInstance: true
-            path: /root/tmp
+        instanceSpecs:
+          - instanceType: S6.2B
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                fsType: ext4
+          - instanceType: S6.2A
+            systemDisk:
+              type: SSD3.0
+              size: 20Gi
+            dataDisks:
+              - name: data-0
+                type: SSD3.0
+                size: 50Gi
+                deleteWithInstance: true
+                path: /data
+                fsType: ext4
 
       ports:
         - name: api
@@ -430,7 +457,7 @@ spec:
         enablePublic: true
         enablePrivate: true
         cidrBlock: "10.0.2.0/24"
-        changeDefaultRoute: true
+        sharedInternetAccessEnable: true
         userVpcId: 3c9d8253-778e-468a-b18d-6670c5204904
         userSgId: 4fc47f84-c5e1-43df-8b7a-5e838f18f793
         userSubnetId: a7cf00fb-87cd-4615-8d11-af131472245e

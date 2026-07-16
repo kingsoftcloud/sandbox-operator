@@ -160,9 +160,10 @@ When you modify `SandboxTemplate.spec`, the validating webhook computes the diff
 | `spec.template.spec.startCommand` | Start command. |
 | `spec.template.spec.kecConfig.cpu` | CPU. |
 | `spec.template.spec.kecConfig.memory` | Memory. |
-| `spec.template.spec.kecConfig.instanceType` | KEC instance type. |
-| `spec.template.spec.kecConfig.systemDisk` | System disk type and size. |
-| `spec.template.spec.kecConfig.dataDisks` | Data disks. |
+| `spec.template.spec.kecConfig.instanceSpecs` | Multiple instance-type configuration; each item contains `instanceType`, `systemDisk`, and optional `dataDisks`. |
+| `spec.template.spec.kecConfig.instanceSpecs[].instanceType` | KEC instance type. |
+| `spec.template.spec.kecConfig.instanceSpecs[].systemDisk` | System disk type and size. |
+| `spec.template.spec.kecConfig.instanceSpecs[].dataDisks` | Data disks. The field remains an array for future multi-disk compatibility; currently each instance type supports at most one data disk. |
 | `spec.template.spec.env` | Template environment variables, using `name`/`value`. |
 | `spec.template.spec.networkConfig` | Network configuration. |
 | `spec.template.spec.skillConfig` | Skill configuration. |
@@ -183,7 +184,7 @@ If you modify KS3/KPFS mounts:
 * To remove all KPFS mounts, delete `kpfsMountConfig` or set `enabled: false`.
 * As long as the updated KS3 or KPFS mount remains enabled, `spec.template.spec.storageCredentialRef.name` must be configured and the referenced Secret must contain `accessKey` and `secretAccessKey`.
 
-If you modify instance type, system disk, or data disk fields, ensure that `spec.template.spec.kecConfig.instanceType`, `spec.template.spec.kecConfig.systemDisk.type`, and `spec.template.spec.kecConfig.systemDisk.size` are all provided.
+If you modify instance type, system disk, or data disks, configure them through `spec.template.spec.kecConfig.instanceSpecs`. Each item must set `instanceType`, `systemDisk.type`, and `systemDisk.size`. `dataDisks` currently accepts at most one data disk and does not require `snapshotID`. Direct `instanceType`, `systemDisk`, and `dataDisks` fields under `kecConfig` are no longer supported.
 
 ### 3.3 Delete a template
 

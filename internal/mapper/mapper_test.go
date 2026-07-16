@@ -94,65 +94,72 @@ func TestTemplateUpdateRequestFromDiffOnlySendsChangedTopLevelFields(t *testing.
 	}
 }
 
-func TestTemplateUpdateRequestFromDiffSendsDiskAsKecConfig(t *testing.T) {
-	old := templateWithKS3("old description", "/mnt/old")
-	next := templateWithKS3("old description", "/mnt/old")
-	next.Spec.Template.Spec.KecConfig.SystemDisk = &sandboxv1.SystemDiskSpec{Type: "ESSD_PL0", Size: resource.MustParse("80Gi")}
-	next.Spec.Template.Spec.KecConfig.InstanceType = "N3.2B"
-
-	req := TemplateUpdateRequestFromDiff(next, old, RuntimeCredentials{})
-	if req.KecConfig == nil || !req.KecConfig.Enabled || req.KecConfig.InstanceType != "N3.2B" || req.KecConfig.SystemDiskType != "ESSD_PL0" || req.KecConfig.SystemDiskSizeGB != 80 {
-		t.Fatalf("disk diff should send KecConfig with SystemDiskSize=80Gi, got %#v", req.KecConfig)
-	}
-
-	err := CompleteTemplateUpdateRequestFromRemote(&req, openapi.Template{KecConfig: &openapi.KecConfig{
-		InstanceType:     "N3.2B",
-		SystemDiskType:   "ESSD_PL0",
-		SystemDiskSizeGB: 40,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if req.KecConfig.InstanceType != "N3.2B" || req.KecConfig.SystemDiskType != "ESSD_PL0" || req.KecConfig.SystemDiskSizeGB != 80 {
-		t.Fatalf("remote KecConfig completion failed: %#v", req.KecConfig)
-	}
-}
-
-func TestTemplateCreateRequestSendsKecConfig(t *testing.T) {
+func TestTemplateCreateRequestSendsKecInstanceSpecs(t *testing.T) {
 	obj := templateWithKS3("description", "/mnt/data")
-	obj.Spec.Template.Spec.KecConfig.SystemDisk = &sandboxv1.SystemDiskSpec{Type: "ESSD_PL0", Size: resource.MustParse("80Gi")}
-	obj.Spec.Template.Spec.KecConfig.InstanceType = "N3.2B"
-	obj.Spec.Template.Spec.KecConfig.DataDisks = []sandboxv1.DataDiskSpec{{
-		Name:               "data-0",
-		Type:               "ESSD_PL0",
-		SizeMB:             51200,
-		DeleteWithInstance: true,
-		Path:               "/data",
-	}}
+	obj.Spec.Template.Spec.KecConfig = &sandboxv1.RuntimeKecConfig{
+		CPU:    "2",
+		Memory: resource.MustParse("4Gi"),
+		InstanceSpecs: []sandboxv1.KecInstanceSpec{
+			{
+				InstanceType: "S6.2B",
+				SystemDisk:   &sandboxv1.SystemDiskSpec{Type: "SSD3.0", Size: resource.MustParse("20Gi")},
+				DataDisks: []sandboxv1.DataDiskSpec{{
+					Type:               "SSD3.0",
+					Size:               resource.MustParse("50Gi"),
+					DeleteWithInstance: true,
+					Path:               "/data",
+					FsType:             "ext4",
+				}},
+			},
+			{
+				InstanceType: "S6.2A",
+				SystemDisk:   &sandboxv1.SystemDiskSpec{Type: "SSD3.0", Size: resource.MustParse("20Gi")},
+				DataDisks: []sandboxv1.DataDiskSpec{{
+					Type:               "SSD3.0",
+					Size:               resource.MustParse("100Gi"),
+					DeleteWithInstance: true,
+					Path:               "/data2",
+					FsType:             "ext4",
+				}},
+			},
+		},
+	}
 
 	req := TemplateCreateRequest(obj, RuntimeCredentials{})
-	if req.KecConfig == nil || !req.KecConfig.Enabled {
-		t.Fatalf("create request should include KecConfig: %#v", req.KecConfig)
+	if req.CPU != 2 || req.Memory != 4 {
+		t.Fatalf("create request should send global CPU/Memory, got cpu=%d memory=%d", req.CPU, req.Memory)
 	}
-	if req.KecConfig.InstanceType != "N3.2B" || req.KecConfig.SystemDiskType != "ESSD_PL0" || req.KecConfig.SystemDiskSizeGB != 80 {
-		t.Fatalf("create KecConfig basic fields mismatch: %#v", req.KecConfig)
+	if req.KecConfig == nil || !req.KecConfig.Enabled || len(req.KecConfig.InstanceSpecs) != 2 {
+		t.Fatalf("create request should include KecConfig.InstanceSpecs: %#v", req.KecConfig)
 	}
-	if len(req.KecConfig.DataDisks) != 1 || req.KecConfig.DataDisks[0].Type != "ESSD_PL0" || req.KecConfig.DataDisks[0].SizeGB != 50 {
-		t.Fatalf("create KecConfig data disks mismatch: %#v", req.KecConfig.DataDisks)
+	first := req.KecConfig.InstanceSpecs[0]
+	if first.InstanceType != "S6.2B" || first.SystemDisk == nil || first.SystemDisk.Type != "SSD3.0" || first.SystemDisk.SizeGB != 20 {
+		t.Fatalf("first instance spec mismatch: %#v", first)
+	}
+	if len(first.DataDisks) != 1 || first.DataDisks[0].SizeGB != 50 || first.DataDisks[0].FsType != "ext4" {
+		t.Fatalf("first instance spec data disk mismatch: %#v", first.DataDisks)
 	}
 }
 
-func TestTemplateUpdateRequestFromDiffSendsKecSpecChange(t *testing.T) {
+func TestTemplateUpdateRequestFromDiffSendsKecInstanceSpecChange(t *testing.T) {
 	old := templateWithKS3("old description", "/mnt/old")
-	old.Spec.Template.Spec.KecConfig.SystemDisk = &sandboxv1.SystemDiskSpec{Type: "ESSD_PL0", Size: resource.MustParse("80Gi")}
-	old.Spec.Template.Spec.KecConfig.InstanceType = "N3.2B"
+	old.Spec.Template.Spec.KecConfig = &sandboxv1.RuntimeKecConfig{
+		InstanceSpecs: []sandboxv1.KecInstanceSpec{{
+			InstanceType: "S6.2B",
+			SystemDisk:   &sandboxv1.SystemDiskSpec{Type: "SSD3.0", Size: resource.MustParse("20Gi")},
+		}},
+	}
 	next := templateWithKS3("old description", "/mnt/old")
-	next.Spec.Template.Spec.KecConfig.SystemDisk = &sandboxv1.SystemDiskSpec{Type: "ESSD_PL0", Size: resource.MustParse("80Gi")}
-	next.Spec.Template.Spec.KecConfig.InstanceType = "N3.4B"
+	next.Spec.Template.Spec.KecConfig = &sandboxv1.RuntimeKecConfig{
+		InstanceSpecs: []sandboxv1.KecInstanceSpec{{
+			InstanceType: "S6.2A",
+			SystemDisk:   &sandboxv1.SystemDiskSpec{Type: "SSD3.0", Size: resource.MustParse("20Gi")},
+		}},
+	}
 
 	req := TemplateUpdateRequestFromDiff(next, old, RuntimeCredentials{})
-	if req.KecConfig == nil || req.KecConfig.InstanceType != "N3.4B" || req.KecConfig.SystemDiskType != "ESSD_PL0" || req.KecConfig.SystemDiskSizeGB != 80 {
-		t.Fatalf("kec spec diff should send KecConfig: %#v", req.KecConfig)
+	if req.KecConfig == nil || len(req.KecConfig.InstanceSpecs) != 1 || req.KecConfig.InstanceSpecs[0].InstanceType != "S6.2A" {
+		t.Fatalf("kec instance spec diff should send KecConfig.InstanceSpecs: %#v", req.KecConfig)
 	}
 }
 
@@ -176,15 +183,22 @@ func TestTemplatePoolAndObservabilityLiveUnderRuntimeSpec(t *testing.T) {
 	ApplyTemplateSpecFromOpenAPI(&synced, openapi.Template{
 		TemplateType:     "custom",
 		TemplateCategory: "Private",
-		KecConfig:        &openapi.KecConfig{InstanceType: "N3.2B", SystemDiskType: "ESSD_PL0", SystemDiskSizeGB: 80},
-		PreheatConfig:    &openapi.PreheatConfig{PreheatEnable: true, PreheatNumber: 3},
-		KlogConfig:       &openapi.KlogConfig{Enabled: true, ProjectName: "project", PoolName: "pool"},
+		KecConfig: &openapi.KecConfig{
+			Enabled: true,
+			InstanceSpecs: []openapi.InstanceSpec{{
+				InstanceType: "N3.2B",
+				SystemDisk:   &openapi.SystemDisk{Type: "ESSD_PL0", SizeGB: 80},
+			}},
+		},
+		PreheatConfig: &openapi.PreheatConfig{PreheatEnable: true, PreheatNumber: 3},
+		KlogConfig:    &openapi.KlogConfig{Enabled: true, ProjectName: "project", PoolName: "pool"},
 	})
-	if synced.Spec.Template.Spec.KecConfig == nil || synced.Spec.Template.Spec.KecConfig.InstanceType != "N3.2B" ||
-		synced.Spec.Template.Spec.KecConfig.SystemDisk == nil || synced.Spec.Template.Spec.KecConfig.SystemDisk.Type != "ESSD_PL0" {
+	kec := synced.Spec.Template.Spec.KecConfig
+	if kec == nil || len(kec.InstanceSpecs) != 1 || kec.InstanceSpecs[0].InstanceType != "N3.2B" ||
+		kec.InstanceSpecs[0].SystemDisk == nil || kec.InstanceSpecs[0].SystemDisk.Type != "ESSD_PL0" {
 		t.Fatalf("remote kec was not written under template.spec.kecConfig: %#v", synced.Spec.Template.Spec.KecConfig)
 	}
-	if synced.Spec.Template.Spec.KecConfig.SystemDisk == nil || synced.Spec.Template.Spec.KecConfig.SystemDisk.Size.String() != "80Gi" {
+	if kec.InstanceSpecs[0].SystemDisk == nil || kec.InstanceSpecs[0].SystemDisk.Size.String() != "80Gi" {
 		t.Fatalf("remote system disk was not written under template.spec.kecConfig.systemDisk.size: %#v", synced.Spec.Template.Spec.KecConfig)
 	}
 	if synced.Spec.Template == nil || synced.Spec.Template.Spec.Pool == nil || synced.Spec.Template.Spec.Pool.TargetSize != 3 {
@@ -199,6 +213,48 @@ func TestTemplatePoolAndObservabilityLiveUnderRuntimeSpec(t *testing.T) {
 	ApplyTemplateStatusFromOpenAPI(&synced, openapi.Template{Status: "Ready"})
 	if synced.Status.Klog != nil {
 		t.Fatalf("status.klog should be cleared during sync: %#v", synced.Status.Klog)
+	}
+}
+
+func TestApplyTemplateSpecFromOpenAPIWritesKecInstanceSpecs(t *testing.T) {
+	var synced sandboxv1.SandboxTemplate
+	ApplyTemplateSpecFromOpenAPI(&synced, openapi.Template{
+		TemplateType:     "custom",
+		TemplateCategory: "Private",
+		KecConfig: &openapi.KecConfig{
+			Enabled: true,
+			InstanceSpecs: []openapi.InstanceSpec{{
+				InstanceType: "S6.2B",
+				CPU:          2,
+				Memory:       4,
+				SystemDisk:   &openapi.SystemDisk{Type: "SSD3.0", SizeGB: 20},
+				DataDisks: []openapi.DataDisk{{
+					Type:               "SSD3.0",
+					SizeGB:             50,
+					DeleteWithInstance: true,
+					Path:               "/data",
+					FsType:             "ext4",
+				}},
+			}},
+		},
+	})
+
+	kec := synced.Spec.Template.Spec.KecConfig
+	if kec == nil || len(kec.InstanceSpecs) != 1 {
+		t.Fatalf("remote instance specs were not written under template.spec.kecConfig: %#v", kec)
+	}
+	if kec.CPU != "2" || kec.Memory.String() != "4Gi" {
+		t.Fatalf("remote global cpu/memory mismatch: %#v", kec)
+	}
+	spec := kec.InstanceSpecs[0]
+	if spec.InstanceType != "S6.2B" {
+		t.Fatalf("remote instance spec basic fields mismatch: %#v", spec)
+	}
+	if spec.SystemDisk == nil || spec.SystemDisk.Type != "SSD3.0" || spec.SystemDisk.Size.String() != "20Gi" {
+		t.Fatalf("remote instance spec system disk mismatch: %#v", spec.SystemDisk)
+	}
+	if len(spec.DataDisks) != 1 || spec.DataDisks[0].Size.String() != "50Gi" || spec.DataDisks[0].FsType != "ext4" {
+		t.Fatalf("remote instance spec data disks mismatch: %#v", spec.DataDisks)
 	}
 }
 
