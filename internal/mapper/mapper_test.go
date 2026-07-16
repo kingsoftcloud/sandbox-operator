@@ -108,7 +108,6 @@ func TestTemplateCreateRequestSendsKecInstanceSpecs(t *testing.T) {
 					Size:               resource.MustParse("50Gi"),
 					DeleteWithInstance: true,
 					Path:               "/data",
-					SnapshotID:         "snapshot-1",
 					FsType:             "ext4",
 				}},
 			},
@@ -137,7 +136,7 @@ func TestTemplateCreateRequestSendsKecInstanceSpecs(t *testing.T) {
 	if first.InstanceType != "S6.2B" || first.SystemDisk == nil || first.SystemDisk.Type != "SSD3.0" || first.SystemDisk.SizeGB != 20 {
 		t.Fatalf("first instance spec mismatch: %#v", first)
 	}
-	if len(first.DataDisks) != 1 || first.DataDisks[0].SizeGB != 50 || first.DataDisks[0].SnapshotID != "snapshot-1" || first.DataDisks[0].FsType != "ext4" {
+	if len(first.DataDisks) != 1 || first.DataDisks[0].SizeGB != 50 || first.DataDisks[0].FsType != "ext4" {
 		t.Fatalf("first instance spec data disk mismatch: %#v", first.DataDisks)
 	}
 }
@@ -234,7 +233,6 @@ func TestApplyTemplateSpecFromOpenAPIWritesKecInstanceSpecs(t *testing.T) {
 					SizeGB:             50,
 					DeleteWithInstance: true,
 					Path:               "/data",
-					SnapshotID:         "snapshot-1",
 					FsType:             "ext4",
 				}},
 			}},
@@ -255,7 +253,7 @@ func TestApplyTemplateSpecFromOpenAPIWritesKecInstanceSpecs(t *testing.T) {
 	if spec.SystemDisk == nil || spec.SystemDisk.Type != "SSD3.0" || spec.SystemDisk.Size.String() != "20Gi" {
 		t.Fatalf("remote instance spec system disk mismatch: %#v", spec.SystemDisk)
 	}
-	if len(spec.DataDisks) != 1 || spec.DataDisks[0].Size.String() != "50Gi" || spec.DataDisks[0].SnapshotID != "snapshot-1" || spec.DataDisks[0].FsType != "ext4" {
+	if len(spec.DataDisks) != 1 || spec.DataDisks[0].Size.String() != "50Gi" || spec.DataDisks[0].FsType != "ext4" {
 		t.Fatalf("remote instance spec data disks mismatch: %#v", spec.DataDisks)
 	}
 }

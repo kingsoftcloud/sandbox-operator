@@ -77,6 +77,30 @@ func TestValidateTemplateAllowsGlobalResourcesWithKecInstanceSpecs(t *testing.T)
 	}
 }
 
+func TestValidateTemplateRejectsMultipleDataDisksPerInstanceSpec(t *testing.T) {
+	h := &Handler{}
+	obj := validTemplateForWebhook()
+	obj.Spec.Template.Spec.KecConfig = &sandboxv1.RuntimeKecConfig{
+		InstanceSpecs: []sandboxv1.KecInstanceSpec{{
+			InstanceType: "S6.2B",
+			SystemDisk:   &sandboxv1.SystemDiskSpec{Type: "SSD3.0", Size: resource.MustParse("20Gi")},
+			DataDisks: []sandboxv1.DataDiskSpec{
+				{Type: "SSD3.0", Size: resource.MustParse("50Gi"), Path: "/data"},
+				{Type: "SSD3.0", Size: resource.MustParse("100Gi"), Path: "/data2"},
+			},
+		}},
+	}
+
+	if err := h.validateTemplate(obj); err == nil {
+		t.Fatalf("multiple data disks under one instance spec should be rejected")
+	}
+
+	obj.Spec.Template.Spec.KecConfig.InstanceSpecs[0].DataDisks = obj.Spec.Template.Spec.KecConfig.InstanceSpecs[0].DataDisks[:1]
+	if err := h.validateTemplate(obj); err != nil {
+		t.Fatalf("single data disk under one instance spec should be accepted: %v", err)
+	}
+}
+
 func TestValidateNoUnsupportedKecConfigFieldsRaw(t *testing.T) {
 	raw := []byte(`{
 		"spec": {

@@ -142,14 +142,6 @@ spec:
                 size: 50Gi
                 deleteWithInstance: true
                 path: /data
-                snapshotID: ""
-                fsType: ext4
-              - name: data-1
-                type: SSD3.0
-                size: 100Gi
-                deleteWithInstance: true
-                path: /data2
-                snapshotID: ""
                 fsType: ext4
           - instanceType: S6.2A
             systemDisk:
@@ -161,14 +153,6 @@ spec:
                 size: 50Gi
                 deleteWithInstance: true
                 path: /data
-                snapshotID: ""
-                fsType: ext4
-              - name: data-1
-                type: SSD3.0
-                size: 100Gi
-                deleteWithInstance: true
-                path: /data2
-                snapshotID: ""
                 fsType: ext4
 
       # Container ports.
@@ -223,7 +207,7 @@ spec:
         enablePublic: true
         enablePrivate: true
         cidrBlock: "10.0.2.0/24"
-        changeDefaultRoute: true
+        sharedInternetAccessEnable: true
         userVpcId: 3c9d8253-778e-468a-b18d-6670c5204904
         userSgId: 4fc47f84-c5e1-43df-8b7a-5e838f18f793
         userSubnetId: a7cf00fb-87cd-4615-8d11-af131472245e
@@ -474,7 +458,7 @@ spec:
         enablePublic: true
         enablePrivate: true
         cidrBlock: "10.0.2.0/24"
-        changeDefaultRoute: true
+        sharedInternetAccessEnable: true
         userVpcId: 3c9d8253-778e-468a-b18d-6670c5204904
         userSgId: 4fc47f84-c5e1-43df-8b7a-5e838f18f793
         userSubnetId: a7cf00fb-87cd-4615-8d11-af131472245e

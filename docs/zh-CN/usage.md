@@ -164,7 +164,7 @@ kubectl get stpl -n sandbox-demo full-template \
 | `spec.template.spec.kecConfig.instanceSpecs` | 多机型配置；每个条目包含 `instanceType`、`systemDisk` 和可选 `dataDisks`。 |
 | `spec.template.spec.kecConfig.instanceSpecs[].instanceType` | KEC 机型。 |
 | `spec.template.spec.kecConfig.instanceSpecs[].systemDisk` | 系统盘类型和大小。 |
-| `spec.template.spec.kecConfig.instanceSpecs[].dataDisks` | 数据盘。 |
+| `spec.template.spec.kecConfig.instanceSpecs[].dataDisks` | 数据盘。字段暂时保留数组形式以兼容未来多数据盘；当前每个机型最多配置 1 个。 |
 | `spec.template.spec.env` | 模板环境变量，字段为 `name/value`。 |
 | `spec.template.spec.networkConfig` | 网络配置。 |
 | `spec.template.spec.skillConfig` | 技能配置。 |
@@ -185,7 +185,7 @@ kubectl edit stpl -n sandbox-demo full-template
 - 删除全部 KPFS 挂载时，可以删除 `kpfsMountConfig` 或设置 `enabled: false`。
 - 只要更新后的 KS3 或 KPFS 仍为启用状态，就必须配置 `spec.template.spec.storageCredentialRef.name`，并确保该 Secret 存在 `accessKey` 和 `secretAccessKey`。
 
-如果修改机型、系统盘或数据盘，需要通过 `spec.template.spec.kecConfig.instanceSpecs` 配置。每个条目都需要填写 `instanceType`、`systemDisk.type`、`systemDisk.size`。`kecConfig` 下不再支持直接配置 `instanceType`、`systemDisk`、`dataDisks`。
+如果修改机型、系统盘或数据盘，需要通过 `spec.template.spec.kecConfig.instanceSpecs` 配置。每个条目都需要填写 `instanceType`、`systemDisk.type`、`systemDisk.size`。`dataDisks` 当前最多包含 1 个数据盘，且不需要指定 `snapshotID`。`kecConfig` 下不再支持直接配置 `instanceType`、`systemDisk`、`dataDisks`。
 
 ### 3.3 删除模板
 

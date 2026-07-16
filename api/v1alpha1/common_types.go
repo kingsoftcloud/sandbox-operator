@@ -93,14 +93,14 @@ type TemplateEnvVar struct {
 }
 
 type OpenAPINetworkConfig struct {
-	EnablePublic       bool   `json:"enablePublic,omitempty"`
-	EnablePrivate      bool   `json:"enablePrivate,omitempty"`
-	CIDRBlock          string `json:"cidrBlock,omitempty"`
-	ChangeDefaultRoute bool   `json:"changeDefaultRoute,omitempty"`
-	UserVpcID          string `json:"userVpcId,omitempty"`
-	UserSgID           string `json:"userSgId,omitempty"`
-	UserSubnetID       string `json:"userSubnetId,omitempty"`
-	AvailabilityZone   string `json:"availabilityZone,omitempty"`
+	EnablePublic               bool   `json:"enablePublic,omitempty"`
+	EnablePrivate              bool   `json:"enablePrivate,omitempty"`
+	CIDRBlock                  string `json:"cidrBlock,omitempty"`
+	SharedInternetAccessEnable bool   `json:"sharedInternetAccessEnable,omitempty"`
+	UserVpcID                  string `json:"userVpcId,omitempty"`
+	UserSgID                   string `json:"userSgId,omitempty"`
+	UserSubnetID               string `json:"userSubnetId,omitempty"`
+	AvailabilityZone           string `json:"availabilityZone,omitempty"`
 }
 
 type SkillConfig struct {
@@ -132,7 +132,6 @@ type DataDiskSpec struct {
 	Size               resource.Quantity `json:"size,omitempty"`
 	DeleteWithInstance bool              `json:"deleteWithInstance,omitempty"`
 	Path               string            `json:"path,omitempty"`
-	SnapshotID         string            `json:"snapshotID,omitempty"`
 	FsType             string            `json:"fsType,omitempty"`
 }
 

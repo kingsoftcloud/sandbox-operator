@@ -530,7 +530,7 @@ func templateNetwork(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.NetworkConfig 
 	return &openapi.NetworkConfig{
 		PublicNetworkEnable:        in.EnablePublic,
 		PrivateNetworkEnable:       in.EnablePrivate,
-		SharedInternetAccessEnable: in.ChangeDefaultRoute,
+		SharedInternetAccessEnable: in.SharedInternetAccessEnable,
 		VPCConfiguration: &openapi.VPCConfig{
 			VPCID:            in.UserVpcID,
 			SubnetID:         in.UserSubnetID,
@@ -685,7 +685,6 @@ func dataDiskSpecsToOpenAPI(in []sandboxv1.DataDiskSpec) []openapi.DataDisk {
 			SizeGB:             int64(quantityGB(disk.Size.Value())),
 			DeleteWithInstance: disk.DeleteWithInstance,
 			Path:               disk.Path,
-			SnapshotID:         disk.SnapshotID,
 			FsType:             disk.FsType,
 		})
 	}
@@ -752,9 +751,9 @@ func networkConfigFromOpenAPI(in *openapi.NetworkConfig) *sandboxv1.OpenAPINetwo
 		return nil
 	}
 	out := &sandboxv1.OpenAPINetworkConfig{
-		EnablePublic:       in.PublicNetworkEnable,
-		EnablePrivate:      in.PrivateNetworkEnable,
-		ChangeDefaultRoute: in.SharedInternetAccessEnable,
+		EnablePublic:               in.PublicNetworkEnable,
+		EnablePrivate:              in.PrivateNetworkEnable,
+		SharedInternetAccessEnable: in.SharedInternetAccessEnable,
 	}
 	if in.VPCConfiguration != nil {
 		out.CIDRBlock = in.VPCConfiguration.CIDRBlock
@@ -780,7 +779,6 @@ func dataDisksFromOpenAPI(in []openapi.DataDisk) []sandboxv1.DataDiskSpec {
 			Type:               disk.Type,
 			DeleteWithInstance: disk.DeleteWithInstance,
 			Path:               disk.Path,
-			SnapshotID:         disk.SnapshotID,
 			FsType:             disk.FsType,
 		}
 		if disk.SizeGB > 0 {

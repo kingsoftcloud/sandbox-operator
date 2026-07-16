@@ -485,6 +485,9 @@ func validateKecConfig(kec *sandboxv1.RuntimeKecConfig) error {
 			if spec.InstanceType == "" || spec.SystemDisk == nil || spec.SystemDisk.Type == "" || spec.SystemDisk.Size.IsZero() {
 				return fmt.Errorf("KEC instance spec requires spec.template.spec.kecConfig.instanceSpecs[].instanceType, systemDisk.type, and systemDisk.size")
 			}
+			if len(spec.DataDisks) > 1 {
+				return fmt.Errorf("spec.template.spec.kecConfig.instanceSpecs[].dataDisks currently supports at most one data disk")
+			}
 		}
 	}
 	return nil

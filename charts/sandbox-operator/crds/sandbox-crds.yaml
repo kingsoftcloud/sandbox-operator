@@ -96,6 +96,7 @@ spec:
                                         type: string
                                   dataDisks:
                                     type: array
+                                    maxItems: 1
                                     items:
                                       type: object
                                       properties:
@@ -108,8 +109,6 @@ spec:
                                         deleteWithInstance:
                                           type: boolean
                                         path:
-                                          type: string
-                                        snapshotID:
                                           type: string
                                         fsType:
                                           type: string
@@ -189,7 +188,7 @@ spec:
                               type: boolean
                             cidrBlock:
                               type: string
-                            changeDefaultRoute:
+                            sharedInternetAccessEnable:
                               type: boolean
                             userVpcId:
                               type: string

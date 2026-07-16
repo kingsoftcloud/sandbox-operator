@@ -85,7 +85,7 @@ spec:
         enablePublic: true
         enablePrivate: true
         cidrBlock: "10.0.2.0/24"
-        changeDefaultRoute: true
+        sharedInternetAccessEnable: true
         userVpcId: "vpc-xxxx"
         userSgId: "sg-xxxx"
         userSubnetId: "subnet-xxxx"
