@@ -5,6 +5,8 @@
 
 # Public image used by deploy targets. Override IMG to deploy a self-built image.
 IMG ?= hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707
+# Operator namespace used by the raw-manifest deploy and undeploy targets.
+NAMESPACE ?= sandbox-operator-system
 # Optional image pull Secret used by the raw-manifest deploy target.
 IMAGE_PULL_SECRET ?=
 
@@ -52,10 +54,10 @@ docker-push: ## Push the container image.
 ##@ Deployment
 
 deploy: ## Deploy the operator to the cluster using raw manifests.
-	IMAGE=$(IMG) IMAGE_PULL_SECRET=$(IMAGE_PULL_SECRET) ./scripts/deploy.sh
+	IMAGE=$(IMG) IMAGE_PULL_SECRET=$(IMAGE_PULL_SECRET) NAMESPACE=$(NAMESPACE) ./scripts/deploy.sh
 
 undeploy: ## Undeploy the operator from the cluster.
-	./scripts/undeploy.sh
+	NAMESPACE=$(NAMESPACE) ./scripts/undeploy.sh
 
 ##@ Cleanup
 

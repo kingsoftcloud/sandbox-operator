@@ -24,6 +24,25 @@ make deploy
 
 This creates the CRDs, RBAC, ConfigMap, Deployment, and webhook resources; it also creates the webhook TLS certificate and waits for the Deployment.
 
+## Choose the Operator Namespace
+
+The default namespace is `sandbox-operator-system`. Helm uses the release namespace, so no additional chart value is required:
+
+```bash
+helm upgrade --install sandbox-operator charts/sandbox-operator \
+  -n sandbox-operator-custom \
+  --create-namespace
+```
+
+Pass the same `NAMESPACE` when deploying and uninstalling raw manifests:
+
+```bash
+make deploy NAMESPACE=sandbox-operator-custom
+make undeploy NAMESPACE=sandbox-operator-custom
+```
+
+CRDs, ClusterRoles, ClusterRoleBindings, and WebhookConfigurations are cluster-scoped and use fixed names. Deploy only one Sandbox Operator instance per cluster.
+
 ## Requirements
 
 - The cluster can access the public registry and Sandbox OpenAPI.
@@ -127,8 +146,9 @@ helm upgrade --install sandbox-operator charts/sandbox-operator \
 For a private registry, first create an image pull Secret in the operator namespace:
 
 ```bash
-kubectl create namespace sandbox-operator-system
-kubectl -n sandbox-operator-system create secret docker-registry sandbox-operator-image-pull \
+OPERATOR_NAMESPACE=sandbox-operator-system
+kubectl create namespace "${OPERATOR_NAMESPACE}"
+kubectl -n "${OPERATOR_NAMESPACE}" create secret docker-registry sandbox-operator-image-pull \
   --docker-server='<REGISTRY_SERVER>' \
   --docker-username='<REGISTRY_USERNAME>' \
   --docker-password='<REGISTRY_PASSWORD>'
@@ -137,7 +157,7 @@ kubectl -n sandbox-operator-system create secret docker-registry sandbox-operato
 Pass the Secret to a raw-manifest deployment:
 
 ```bash
-make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
+make deploy NAMESPACE="${OPERATOR_NAMESPACE}" IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
 ```
 
 For Helm, add `--set imagePullSecrets[0].name=sandbox-operator-image-pull`.

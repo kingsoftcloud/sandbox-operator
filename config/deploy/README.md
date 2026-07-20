@@ -23,7 +23,14 @@ The command applies these resources in the required order, creates the webhook T
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
 ```
 
-For a private registry, create an image pull Secret in `sandbox-operator-system` and add `IMAGE_PULL_SECRET=<SECRET_NAME>`:
+The default namespace is `sandbox-operator-system`. To use another namespace, pass the same `NAMESPACE` to deployment and uninstall:
+
+```bash
+make deploy NAMESPACE=sandbox-operator-custom
+make undeploy NAMESPACE=sandbox-operator-custom
+```
+
+For a private registry, create an image pull Secret in the target operator namespace and add `IMAGE_PULL_SECRET=<SECRET_NAME>`:
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull

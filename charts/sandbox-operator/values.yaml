@@ -1,4 +1,6 @@
-namespace: sandbox-operator-system
+# Empty means the Helm release namespace. Override only when resources must be
+# installed into a namespace different from the release namespace.
+namespace: ""
 createNamespace: false
 
 image:

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: sandbox-operator-config
-  namespace: {{ .Values.namespace }}
+  namespace: {{ include "sandbox-operator.namespace" . }}
 data:
   OPENAPI_BASE_URL: {{ .Values.config.openapiBaseURL | quote }}
   OPENAPI_AUTH_MODE: {{ .Values.config.openapiAuthMode | quote }}

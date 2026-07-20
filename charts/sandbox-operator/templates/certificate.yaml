@@ -3,7 +3,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: sandbox-operator-selfsigned
-  namespace: {{ .Values.namespace }}
+  namespace: {{ include "sandbox-operator.namespace" . }}
 spec:
   selfSigned: {}
 ---
@@ -11,12 +11,12 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: sandbox-operator-serving-cert
-  namespace: {{ .Values.namespace }}
+  namespace: {{ include "sandbox-operator.namespace" . }}
 spec:
   secretName: {{ .Values.webhook.tlsSecretName }}
   dnsNames:
-    - sandbox-operator-webhook.{{ .Values.namespace }}.svc
-    - sandbox-operator-webhook.{{ .Values.namespace }}.svc.cluster.local
+    - sandbox-operator-webhook.{{ include "sandbox-operator.namespace" . }}.svc
+    - sandbox-operator-webhook.{{ include "sandbox-operator.namespace" . }}.svc.cluster.local
   issuerRef:
     name: sandbox-operator-selfsigned
     kind: Issuer

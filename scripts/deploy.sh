@@ -14,6 +14,21 @@ require() {
   fi
 }
 
+validate_namespace() {
+  if [[ ! "${NAMESPACE}" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
+    echo "NAMESPACE must be a valid Kubernetes namespace name: ${NAMESPACE}" >&2
+    exit 1
+  fi
+}
+
+render_manifest() {
+  sed "s|sandbox-operator-system|${NAMESPACE}|g" "$1"
+}
+
+apply_manifest() {
+  render_manifest "$1" | kubectl apply -f -
+}
+
 generate_webhook_cert() {
   require openssl
   tmpdir="$(mktemp -d)"
@@ -71,17 +86,18 @@ patch_webhook_ca_bundle() {
   ]"
 }
 
-kubectl apply -f config/deploy/00-namespace.yaml
-kubectl apply -f config/deploy/01-crd.yaml
-kubectl apply -f config/deploy/02-rbac.yaml
-kubectl apply -f config/deploy/03-config.yaml
+validate_namespace
+apply_manifest config/deploy/00-namespace.yaml
+apply_manifest config/deploy/01-crd.yaml
+apply_manifest config/deploy/02-rbac.yaml
+apply_manifest config/deploy/03-config.yaml
 generate_webhook_cert
-kubectl apply -f config/deploy/04-manager.yaml
+apply_manifest config/deploy/04-manager.yaml
 kubectl -n "${NAMESPACE}" set image deployment/sandbox-operator manager="${IMAGE}"
 if [[ -n "${IMAGE_PULL_SECRET}" ]]; then
   kubectl -n "${NAMESPACE}" patch deployment sandbox-operator --type=merge \
     -p "{\"spec\":{\"template\":{\"spec\":{\"imagePullSecrets\":[{\"name\":\"${IMAGE_PULL_SECRET}\"}]}}}}"
 fi
-kubectl apply -f config/deploy/05-webhook.yaml
+apply_manifest config/deploy/05-webhook.yaml
 patch_webhook_ca_bundle
 kubectl -n "${NAMESPACE}" rollout status deployment/sandbox-operator

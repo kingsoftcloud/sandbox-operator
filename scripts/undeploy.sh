@@ -1,9 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-kubectl delete -f config/deploy/05-webhook.yaml --ignore-not-found
-kubectl delete -f config/deploy/04-manager.yaml --ignore-not-found
-kubectl delete -f config/deploy/03-config.yaml --ignore-not-found
-kubectl delete -f config/deploy/02-rbac.yaml --ignore-not-found
-kubectl delete -f config/deploy/01-crd.yaml --ignore-not-found
-kubectl delete -f config/deploy/00-namespace.yaml --ignore-not-found
+NAMESPACE="${NAMESPACE:-sandbox-operator-system}"
+
+validate_namespace() {
+  if [[ ! "${NAMESPACE}" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ ]]; then
+    echo "NAMESPACE must be a valid Kubernetes namespace name: ${NAMESPACE}" >&2
+    exit 1
+  fi
+}
+
+delete_manifest() {
+  sed "s|sandbox-operator-system|${NAMESPACE}|g" "$1" | kubectl delete -f - --ignore-not-found
+}
+
+validate_namespace
+delete_manifest config/deploy/05-webhook.yaml
+delete_manifest config/deploy/04-manager.yaml
+delete_manifest config/deploy/03-config.yaml
+delete_manifest config/deploy/02-rbac.yaml
+delete_manifest config/deploy/01-crd.yaml
+delete_manifest config/deploy/00-namespace.yaml

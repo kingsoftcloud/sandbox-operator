@@ -1,14 +1,15 @@
+{{- $namespace := include "sandbox-operator.namespace" . -}}
 {{- $caBundle := .Values.webhook.caBundle -}}
 {{- if and (not .Values.certManager.enabled) .Values.webhook.selfSigned.enabled }}
-{{- $serviceDNS := printf "sandbox-operator-webhook.%s.svc" .Values.namespace -}}
+{{- $serviceDNS := printf "sandbox-operator-webhook.%s.svc" $namespace -}}
 {{- $ca := genCA "sandbox-operator-webhook-ca" 3650 -}}
-{{- $cert := genSignedCert $serviceDNS nil (list "sandbox-operator-webhook" (printf "sandbox-operator-webhook.%s" .Values.namespace) $serviceDNS (printf "%s.cluster.local" $serviceDNS)) 3650 $ca -}}
+{{- $cert := genSignedCert $serviceDNS nil (list "sandbox-operator-webhook" (printf "sandbox-operator-webhook.%s" $namespace) $serviceDNS (printf "%s.cluster.local" $serviceDNS)) 3650 $ca -}}
 {{- $caBundle = ($ca.Cert | b64enc) -}}
 apiVersion: v1
 kind: Secret
 metadata:
   name: {{ .Values.webhook.tlsSecretName }}
-  namespace: {{ .Values.namespace }}
+  namespace: {{ $namespace }}
 type: kubernetes.io/tls
 data:
   tls.crt: {{ $cert.Cert | b64enc }}
@@ -19,7 +20,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: sandbox-operator-webhook
-  namespace: {{ .Values.namespace }}
+  namespace: {{ $namespace }}
 spec:
   selector:
     app.kubernetes.io/name: sandbox-operator
@@ -33,7 +34,7 @@ metadata:
   name: sandbox-operator-mutating-webhook
 {{- if .Values.certManager.enabled }}
   annotations:
-    cert-manager.io/inject-ca-from: {{ .Values.namespace }}/sandbox-operator-serving-cert
+    cert-manager.io/inject-ca-from: {{ $namespace }}/sandbox-operator-serving-cert
 {{- end }}
 webhooks:
   - name: msandboxtemplate.sandbox.kce.ksyun.com
@@ -47,7 +48,7 @@ webhooks:
       caBundle: {{ $caBundle | quote }}
 {{- end }}
       service:
-        namespace: {{ .Values.namespace }}
+        namespace: {{ $namespace }}
         name: sandbox-operator-webhook
         path: /mutate-sandbox-kce-ksyun-com-v1alpha1-sandboxtemplate
     rules:
@@ -66,7 +67,7 @@ webhooks:
       caBundle: {{ $caBundle | quote }}
 {{- end }}
       service:
-        namespace: {{ .Values.namespace }}
+        namespace: {{ $namespace }}
         name: sandbox-operator-webhook
         path: /mutate-sandbox-kce-ksyun-com-v1alpha1-sandbox
     rules:
@@ -85,7 +86,7 @@ webhooks:
       caBundle: {{ $caBundle | quote }}
 {{- end }}
       service:
-        namespace: {{ .Values.namespace }}
+        namespace: {{ $namespace }}
         name: sandbox-operator-webhook
         path: /mutate-sandbox-kce-ksyun-com-v1alpha1-sandboxclaim
     rules:
@@ -100,7 +101,7 @@ metadata:
   name: sandbox-operator-validating-webhook
 {{- if .Values.certManager.enabled }}
   annotations:
-    cert-manager.io/inject-ca-from: {{ .Values.namespace }}/sandbox-operator-serving-cert
+    cert-manager.io/inject-ca-from: {{ $namespace }}/sandbox-operator-serving-cert
 {{- end }}
 webhooks:
   - name: vsandboxtemplate.sandbox.kce.ksyun.com
@@ -114,7 +115,7 @@ webhooks:
       caBundle: {{ $caBundle | quote }}
 {{- end }}
       service:
-        namespace: {{ .Values.namespace }}
+        namespace: {{ $namespace }}
         name: sandbox-operator-webhook
         path: /validate-sandbox-kce-ksyun-com-v1alpha1-sandboxtemplate
     rules:
@@ -133,7 +134,7 @@ webhooks:
       caBundle: {{ $caBundle | quote }}
 {{- end }}
       service:
-        namespace: {{ .Values.namespace }}
+        namespace: {{ $namespace }}
         name: sandbox-operator-webhook
         path: /validate-sandbox-kce-ksyun-com-v1alpha1-sandbox
     rules:
@@ -152,7 +153,7 @@ webhooks:
       caBundle: {{ $caBundle | quote }}
 {{- end }}
       service:
-        namespace: {{ .Values.namespace }}
+        namespace: {{ $namespace }}
         name: sandbox-operator-webhook
         path: /validate-sandbox-kce-ksyun-com-v1alpha1-sandboxclaim
     rules:

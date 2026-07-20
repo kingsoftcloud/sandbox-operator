@@ -26,6 +26,25 @@ make deploy
 
 该命令会创建 CRD、RBAC、ConfigMap、Deployment 和 webhook 资源，自动生成 webhook TLS 证书并等待 Deployment 就绪。
 
+## 指定 Operator 命名空间
+
+默认命名空间为 `sandbox-operator-system`。Helm 使用 release namespace，无需额外设置 Chart 值：
+
+```bash
+helm upgrade --install sandbox-operator charts/sandbox-operator \
+  -n sandbox-operator-custom \
+  --create-namespace
+```
+
+原生 Manifest 部署和卸载时传入相同的 `NAMESPACE`：
+
+```bash
+make deploy NAMESPACE=sandbox-operator-custom
+make undeploy NAMESPACE=sandbox-operator-custom
+```
+
+CRD、ClusterRole、ClusterRoleBinding 和 WebhookConfiguration 都是集群级资源，名称固定；同一集群只应部署一个 Sandbox Operator 实例。
+
 ## 部署条件
 
 - 集群可以通过公网访问公共镜像仓库和 Sandbox OpenAPI。
@@ -130,8 +149,9 @@ helm upgrade --install sandbox-operator charts/sandbox-operator \
 私有镜像仓库需要先在 operator 命名空间创建 image pull Secret：
 
 ```bash
-kubectl create namespace sandbox-operator-system
-kubectl -n sandbox-operator-system create secret docker-registry sandbox-operator-image-pull \
+OPERATOR_NAMESPACE=sandbox-operator-system
+kubectl create namespace "${OPERATOR_NAMESPACE}"
+kubectl -n "${OPERATOR_NAMESPACE}" create secret docker-registry sandbox-operator-image-pull \
   --docker-server='<REGISTRY_SERVER>' \
   --docker-username='<REGISTRY_USERNAME>' \
   --docker-password='<REGISTRY_PASSWORD>'
@@ -140,7 +160,7 @@ kubectl -n sandbox-operator-system create secret docker-registry sandbox-operato
 原生 Manifest 部署时传入该 Secret：
 
 ```bash
-make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
+make deploy NAMESPACE="${OPERATOR_NAMESPACE}" IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
 ```
 
 Helm 部署时追加 `--set imagePullSecrets[0].name=sandbox-operator-image-pull`。

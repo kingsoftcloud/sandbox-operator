@@ -21,8 +21,6 @@ import (
 	"sandbox-operator/internal/openapi"
 )
 
-const DefaultOperatorUsername = "system:serviceaccount:sandbox-operator-system:sandbox-operator"
-
 type Mode string
 
 const (
@@ -42,13 +40,12 @@ type Handler struct {
 
 func NewHandler(c client.Client, scheme *runtime.Scheme, creds *credentials.Manager, api openapi.Interface, kind string) *Handler {
 	return &Handler{
-		Client:           c,
-		Credentials:      creds,
-		OpenAPI:          api,
-		Decoder:          admission.NewDecoder(scheme),
-		OperatorUsername: DefaultOperatorUsername,
-		Kind:             kind,
-		Mode:             ModeValidate,
+		Client:      c,
+		Credentials: creds,
+		OpenAPI:     api,
+		Decoder:     admission.NewDecoder(scheme),
+		Kind:        kind,
+		Mode:        ModeValidate,
 	}
 }
 
@@ -82,11 +79,7 @@ func (h *Handler) Handle(ctx context.Context, req admission.Request) admission.R
 }
 
 func (h *Handler) isOperator(req admission.Request) bool {
-	username := h.OperatorUsername
-	if username == "" {
-		username = DefaultOperatorUsername
-	}
-	return req.UserInfo.Username == username
+	return h.OperatorUsername != "" && req.UserInfo.Username == h.OperatorUsername
 }
 
 func (h *Handler) handleMutating(ctx context.Context, req admission.Request) admission.Response {

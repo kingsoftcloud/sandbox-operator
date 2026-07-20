@@ -23,7 +23,16 @@ make deploy
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
 ```
 
-若该镜像仓库为私有仓库，先在 `sandbox-operator-system` 命名空间创建 image pull Secret，再追加 `IMAGE_PULL_SECRET=<SECRET_NAME>`：
+默认部署到 `sandbox-operator-system`。要部署到其它命名空间，部署和卸载时使用相同的 `NAMESPACE`：
+
+```bash
+make deploy NAMESPACE=sandbox-operator-custom
+make undeploy NAMESPACE=sandbox-operator-custom
+```
+
+脚本会将原生 Manifest 中的 operator 命名空间、Webhook Service 引用和 ClusterRoleBinding 的 ServiceAccount subject 一并渲染为该值。
+
+若该镜像仓库为私有仓库，先在 operator 目标命名空间创建 image pull Secret，再追加 `IMAGE_PULL_SECRET=<SECRET_NAME>`：
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
