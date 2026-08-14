@@ -126,7 +126,7 @@ operator 通过其部署命名空间中的 `sandbox-operator-config` ConfigMap �
 | `OPENAPI_SERVICE` | `aicp` | KOP 服务名称。 |
 | `OPENAPI_VERSION` | `2026-04-01` | OpenAPI 版本。 |
 | `DEFAULT_OPENAPI_CREDENTIAL_SECRET` | `sandbox-openapi-credentials` | 业务命名空间中的默认 OpenAPI 凭据 Secret 名称。 |
-| `POLL_INTERVAL` | `30s` | OpenAPI 同步轮询间隔。 |
+| `POLL_INTERVAL` | `500ms` | OpenAPI 同步轮询间隔。 |
 | `POLL_PAGE_SIZE` | `100` | OpenAPI 列表请求的分页大小。 |
 | `MAX_CONCURRENT_NAMESPACES` | `5` | 并发同步的命名空间最大数量。 |
 | `SYNC_NAMESPACES` | 空 | 命名空间白名单；为空时自动发现具有默认 OpenAPI Secret 的命名空间。 |

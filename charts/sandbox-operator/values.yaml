@@ -17,7 +17,7 @@ config:
   openapiService: aicp
   openapiVersion: "2026-04-01"
   defaultOpenAPICredentialSecret: sandbox-openapi-credentials
-  pollInterval: 30s
+  pollInterval: 500ms
   pollPageSize: "100"
   maxConcurrentNamespaces: "5"
   syncNamespaces: ""

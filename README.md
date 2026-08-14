@@ -130,7 +130,7 @@ The operator is configured via the `sandbox-operator-config` ConfigMap in its de
 | `OPENAPI_SERVICE` | `aicp` | KOP service name. |
 | `OPENAPI_VERSION` | `2026-04-01` | OpenAPI version. |
 | `DEFAULT_OPENAPI_CREDENTIAL_SECRET` | `sandbox-openapi-credentials` | Default OpenAPI credential Secret name in business namespaces. |
-| `POLL_INTERVAL` | `30s` | Polling interval for OpenAPI synchronization. |
+| `POLL_INTERVAL` | `500ms` | Polling interval for OpenAPI synchronization. |
 | `POLL_PAGE_SIZE` | `100` | Page size for OpenAPI list calls. |
 | `MAX_CONCURRENT_NAMESPACES` | `5` | Maximum concurrent namespaces being synchronized. |
 | `SYNC_NAMESPACES` | *(empty)* | Comma-separated namespace allowlist; empty means auto-discover namespaces with the default credential Secret. |

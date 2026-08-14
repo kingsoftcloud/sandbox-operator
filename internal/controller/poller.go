@@ -33,7 +33,7 @@ type Poller struct {
 
 func (p *Poller) Run(ctx context.Context) error {
 	if p.Interval <= 0 {
-		p.Interval = 30 * time.Second
+		p.Interval = 500 * time.Millisecond
 	}
 	ticker := time.NewTicker(p.Interval)
 	defer ticker.Stop()

@@ -91,13 +91,13 @@ make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
 
 ## 调整轮询间隔
 
-`POLL_INTERVAL` 使用 Go duration 格式。例如，短时压测可设置为 `500ms`：
+`POLL_INTERVAL` 使用 Go duration 格式，默认值为 `500ms`。资源规模较大时可按需调大，例如设置为 `5s`：
 
 ```bash
-make deploy POLL_INTERVAL=500ms
+make deploy POLL_INTERVAL=5s
 ```
 
-该配置会写入 operator 的 ConfigMap 并滚动重启 Deployment。每次轮询会扫描已配置 OpenAPI 凭据的命名空间并读取远端资源；生产环境建议保持默认 `30s`，不要长期使用 `500ms`。
+该配置会写入 operator 的 ConfigMap 并滚动重启 Deployment。每次轮询会扫描已配置 OpenAPI 凭据的命名空间并读取远端资源；实际轮询频率还会受到单轮同步耗时影响。
 
 ## Webhook 证书
 

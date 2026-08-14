@@ -89,13 +89,13 @@ Repeating this command rolls the operator so the new ConfigMap endpoint takes ef
 
 ## Configure the Polling Interval
 
-`POLL_INTERVAL` uses the Go duration format. For example, use `500ms` for a short load test:
+`POLL_INTERVAL` uses the Go duration format and defaults to `500ms`. For larger resource sets, increase it as needed, for example to `5s`:
 
 ```bash
-make deploy POLL_INTERVAL=500ms
+make deploy POLL_INTERVAL=5s
 ```
 
-The command writes the value to the operator ConfigMap and rolls the Deployment. Each poll scans namespaces with OpenAPI credentials and reads remote resources. Keep the default `30s` in production; do not use `500ms` as a long-running setting.
+The command writes the value to the operator ConfigMap and rolls the Deployment. Each poll scans namespaces with OpenAPI credentials and reads remote resources. The effective frequency is also limited by the duration of each synchronization pass.
 
 ## Webhook Certificates
 

@@ -54,7 +54,7 @@ func main() {
 	flag.StringVar(&openapiAuthMode, "openapi-auth-mode", envOrDefault("OPENAPI_AUTH_MODE", "kop-sigv4"), "OpenAPI auth mode: direct or kop-sigv4.")
 	flag.StringVar(&defaultOpenAPISecretName, "default-openapi-credential-secret", envOrDefault("DEFAULT_OPENAPI_CREDENTIAL_SECRET", credentials.DefaultOpenAPISecretName), "Default Secret name for OpenAPI AK/SK in each business namespace.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", envBoolOrDefault("LEADER_ELECT", false), "Enable leader election for controller manager.")
-	flag.DurationVar(&pollInterval, "poll-interval", envDurationOrDefault("POLL_INTERVAL", 30*time.Second), "OpenAPI polling interval.")
+	flag.DurationVar(&pollInterval, "poll-interval", envDurationOrDefault("POLL_INTERVAL", 500*time.Millisecond), "OpenAPI polling interval.")
 	flag.IntVar(&pollPageSize, "poll-page-size", envIntOrDefault("POLL_PAGE_SIZE", 100), "OpenAPI list page size. The OpenAPI accepts values from 1 to 100.")
 	flag.IntVar(&maxConcurrentNamespaces, "max-concurrent-namespaces", envIntOrDefault("MAX_CONCURRENT_NAMESPACES", 5), "Maximum namespaces to sync concurrently.")
 	flag.StringVar(&syncNamespaces, "sync-namespaces", envOrDefault("SYNC_NAMESPACES", ""), "Comma-separated namespaces to sync. Empty means all namespaces containing the default OpenAPI Secret.")
