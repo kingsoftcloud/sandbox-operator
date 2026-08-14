@@ -59,7 +59,30 @@ Or use the raw manifests:
 make deploy
 ```
 
-Both commands use the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707` and do not require an image-pull credential. To build and use your own image, see the [deployment guide](docs/en/deployment.md).
+Both commands use the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814` and do not require an image-pull credential. To build and use your own image, see the [deployment guide](docs/en/deployment.md).
+
+Common deployment parameters:
+
+```bash
+# Raw manifests: choose the Operator namespace
+make deploy NAMESPACE=sandbox-operator
+
+# Raw manifests: use the internal OpenAPI endpoint
+make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
+
+# Both parameters can be combined
+make deploy NAMESPACE=sandbox-operator \
+  OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
+```
+
+For Helm, use the release namespace and the chart value:
+
+```bash
+helm upgrade --install sandbox-operator charts/sandbox-operator \
+  -n sandbox-operator \
+  --create-namespace \
+  --set config.openapiBaseURL=http://aicp.cn-beijing-6.inner.api.ksyun.com
+```
 
 ### 2. Create OpenAPI credentials in a business namespace
 
@@ -98,11 +121,11 @@ You can also look at the bundled sample in [`config/samples/sandbox_v1alpha1_sam
 
 ## Operator Configuration
 
-The operator is configured via the `sandbox-operator-config` ConfigMap in the `sandbox-operator-system` namespace. Helm exposes these options through `values.yaml`.
+The operator is configured via the `sandbox-operator-config` ConfigMap in its deployment namespace, `sandbox-operator-system` by default. Helm exposes these options through `values.yaml`.
 
 | Name | Default | Description |
 |------|---------|-------------|
-| `OPENAPI_BASE_URL` | `http://aicp.cn-beijing-6.api.ksyun.com` | Sandbox OpenAPI base URL. Ksyun internal accounts can use `http://aicp.cn-beijing-6.inner.api.ksyun.com`. |
+| `OPENAPI_BASE_URL` | `http://aicp.cn-beijing-6.api.ksyun.com` | Sandbox OpenAPI base URL; it can be set to the internal endpoint `http://aicp.cn-beijing-6.inner.api.ksyun.com`. |
 | `OPENAPI_AUTH_MODE` | `kop-sigv4` | OpenAPI authentication mode. |
 | `OPENAPI_SERVICE` | `aicp` | KOP service name. |
 | `OPENAPI_VERSION` | `2026-04-01` | OpenAPI version. |

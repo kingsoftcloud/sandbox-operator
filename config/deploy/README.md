@@ -17,7 +17,7 @@ From the repository root, run:
 make deploy
 ```
 
-The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`; no image-pull credential is needed. To use your own image, override it when deploying:
+The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`; no image-pull credential is needed. To use your own image, override it when deploying:
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
@@ -62,7 +62,7 @@ If you replace the webhook certificate manually, you must patch the webhook `caB
 
 `03-config.yaml` contains the default OpenAPI configuration:
 
-- `OPENAPI_BASE_URL=http://aicp.cn-beijing-6.api.ksyun.com`. For Ksyun internal accounts, override it with `make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com`.
+- `OPENAPI_BASE_URL=http://aicp.cn-beijing-6.api.ksyun.com`. To use the internal endpoint, override it with `make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com`.
 - `OPENAPI_AUTH_MODE=kop-sigv4`
 - `OPENAPI_SERVICE=aicp`
 - `OPENAPI_VERSION=2026-04-01`

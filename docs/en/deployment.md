@@ -1,6 +1,6 @@
 # Deploy Sandbox Operator
 
-The default public image is `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`; no registry credential is required.
+The default public image is `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`; no registry credential is required.
 
 ## Quick Install
 
@@ -45,7 +45,7 @@ CRDs, ClusterRoles, ClusterRoleBindings, and WebhookConfigurations are cluster-s
 
 ## Requirements
 
-- The cluster can access the public registry and Sandbox OpenAPI.
+- The cluster can access the public registry and the configured Sandbox OpenAPI endpoint.
 - Helm deployment requires `helm` and `kubectl`.
 - Raw-manifest deployment requires `make`, `bash`, `kubectl`, and `openssl`.
 - Before deployment, make sure `kubectl get namespaces` succeeds. Installation requires cluster-level permission to create CRDs, ClusterRoles, ClusterRoleBindings, and admission webhooks.
@@ -70,7 +70,7 @@ KUBECONFIG="$PWD/config/kubeconfig.yaml" make deploy
 
 ## Internal OpenAPI Endpoint
 
-For Ksyun internal accounts, add the internal OpenAPI endpoint to the Helm command:
+To access Sandbox OpenAPI through the internal endpoint, add it to the Helm command:
 
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \

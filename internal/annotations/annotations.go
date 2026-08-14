@@ -5,12 +5,13 @@ import "encoding/json"
 const (
 	Prefix = "sandbox.kce.ksyun.com/"
 
-	TemplateID     = Prefix + "template-id"
-	SandboxID      = Prefix + "sandbox-id"
-	SandboxIDs     = Prefix + "sandbox-ids"
-	InlineTemplate = Prefix + "inline-template"
-	Endpoint       = Prefix + "endpoint"
-	Token          = Prefix + "token"
+	TemplateID      = Prefix + "template-id"
+	SandboxID       = Prefix + "sandbox-id"
+	SandboxIDs      = Prefix + "sandbox-ids"
+	InlineTemplate  = Prefix + "inline-template"
+	Endpoint        = Prefix + "endpoint"
+	Token           = Prefix + "token"
+	DeleteRequested = Prefix + "delete-requested"
 )
 
 var ReservedKeys = []string{
@@ -20,6 +21,7 @@ var ReservedKeys = []string{
 	InlineTemplate,
 	Endpoint,
 	Token,
+	DeleteRequested,
 }
 
 func HasReserved(values map[string]string) (string, bool) {

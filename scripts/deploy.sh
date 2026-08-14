@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${IMAGE:-hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707}"
+IMAGE="${IMAGE:-hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814}"
 IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-}"
 NAMESPACE="${NAMESPACE:-sandbox-operator-system}"
 SERVICE_NAME="${SERVICE_NAME:-sandbox-operator-webhook}"

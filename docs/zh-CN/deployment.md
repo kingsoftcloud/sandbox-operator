@@ -1,6 +1,6 @@
 # 部署 Sandbox Operator
 
-默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`，无需镜像仓库凭据。
+默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`，无需镜像仓库凭据。
 
 ## 快速部署
 
@@ -47,7 +47,7 @@ CRD、ClusterRole、ClusterRoleBinding 和 WebhookConfiguration 都是集群级�
 
 ## 部署条件
 
-- 集群可以通过公网访问公共镜像仓库和 Sandbox OpenAPI。
+- 集群可以访问公共镜像仓库以及所配置的 Sandbox OpenAPI 地址。
 - Helm 部署需要 `helm` 与 `kubectl`。
 - 原生 Manifest 部署需要 `make`、`bash`、`kubectl` 和 `openssl`。
 - 部署前应确认 `kubectl get namespaces` 可正常执行；安装需要创建 CRD、ClusterRole、ClusterRoleBinding 和 webhook 等集群级资源的权限。
@@ -70,9 +70,9 @@ make deploy
 KUBECONFIG="$PWD/config/kubeconfig.yaml" make deploy
 ```
 
-## 使用内网 OpenAPI
+## 使用内网 OpenAPI 地址
 
-金山云内部账号使用内网 OpenAPI 时，Helm 部署追加：
+需要通过内网访问 Sandbox OpenAPI 时，Helm 部署追加：
 
 ```bash
 helm upgrade --install sandbox-operator charts/sandbox-operator \
@@ -128,7 +128,7 @@ kubectl -n sandbox-demo create secret generic sandbox-openapi-credentials \
 
 ## 使用自建镜像
 
-默认使用的是公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`，无需镜像仓库凭据。
+默认使用的是公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`，无需镜像仓库凭据。
 需要自行构建镜像时，先构建并推送到集群可访问的仓库：
 
 ```bash

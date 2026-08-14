@@ -229,8 +229,10 @@ type KecConfig struct {
 }
 
 type PreheatConfig struct {
-	PreheatEnable           bool `json:"PreheatEnable,omitempty"`
-	PreheatNumber           int  `json:"PreheatNumber,omitempty"`
+	// Do not use omitempty here. Updating a pool from a positive size to zero
+	// must explicitly send false and 0 to the OpenAPI service.
+	PreheatEnable           bool `json:"PreheatEnable"`
+	PreheatNumber           int  `json:"PreheatNumber"`
 	PreheatedInstanceNumber int  `json:"PreheatedInstanceNumber,omitempty"`
 }
 

@@ -4,7 +4,7 @@
 # Existing scripts under `scripts/` are still used internally by several targets.
 
 # Public image used by deploy targets. Override IMG to deploy a self-built image.
-IMG ?= hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707
+IMG ?= hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814
 # Operator namespace used by the raw-manifest deploy and undeploy targets.
 NAMESPACE ?= sandbox-operator-system
 # Optional image pull Secret used by the raw-manifest deploy target.

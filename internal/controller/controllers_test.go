@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -13,6 +14,8 @@ import (
 
 	sandboxv1 "sandbox-operator/api/v1alpha1"
 	"sandbox-operator/internal/annotations"
+	"sandbox-operator/internal/credentials"
+	"sandbox-operator/internal/openapi"
 )
 
 func TestSandboxClaimConsumesSandboxIDsAndDoesNotRecreateExpiredChild(t *testing.T) {
@@ -201,4 +204,123 @@ func TestDeletingSandboxClaimDoesNotDeleteClaimedSandboxes(t *testing.T) {
 	if err := c.Get(ctx, request.NamespacedName, &gotClaim); !apierrors.IsNotFound(err) {
 		t.Fatalf("claim should be removed after finalizer cleanup, get err=%v", err)
 	}
+}
+
+func TestDeletingSandboxSubmitsOpenAPIDeleteOnlyOnce(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	if err := sandboxv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	now := metav1.Now()
+	sandbox := &sandboxv1.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "delete-once",
+			Namespace:         "sandbox-demo",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{SandboxFinalizer},
+			Annotations: map[string]string{
+				annotations.SandboxID: "sandbox-1",
+			},
+		},
+	}
+	credential := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      credentials.DefaultOpenAPISecretName,
+			Namespace: sandbox.Namespace,
+		},
+		Data: map[string][]byte{
+			credentials.KeyAccessKeyID:     []byte("ak"),
+			credentials.KeySecretAccessKey: []byte("sk"),
+			credentials.KeyRegion:          []byte("cn-beijing-6"),
+		},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(sandbox, credential).
+		WithStatusSubresource(&sandboxv1.Sandbox{}).
+		Build()
+	api := &countingOpenAPI{}
+	reconciler := &SandboxReconciler{
+		Client:      c,
+		Credentials: credentials.NewManager(c, credentials.DefaultOpenAPISecretName),
+		OpenAPI:     api,
+	}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name}}
+
+	result, err := reconciler.Reconcile(ctx, request)
+	if err != nil {
+		t.Fatalf("first reconcile: %v", err)
+	}
+	if !result.Requeue || api.deleteSandboxCalls != 1 {
+		t.Fatalf("first reconcile should submit exactly one delete and requeue, result=%#v calls=%d", result, api.deleteSandboxCalls)
+	}
+
+	var marked sandboxv1.Sandbox
+	if err := c.Get(ctx, request.NamespacedName, &marked); err != nil {
+		t.Fatalf("get marked sandbox: %v", err)
+	}
+	if annotations.Get(marked.Annotations, annotations.DeleteRequested) != "true" {
+		t.Fatalf("successful delete must be persisted before finalizer removal: %#v", marked.Annotations)
+	}
+
+	if _, err := reconciler.Reconcile(ctx, request); err != nil {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	if api.deleteSandboxCalls != 1 {
+		t.Fatalf("second reconcile must not submit another delete, calls=%d", api.deleteSandboxCalls)
+	}
+}
+
+type countingOpenAPI struct {
+	deleteSandboxCalls int
+}
+
+func (c *countingOpenAPI) CreateTemplate(context.Context, openapi.Credential, openapi.CreateTemplateRequest) (*openapi.CreateTemplateResponse, error) {
+	return nil, nil
+}
+
+func (c *countingOpenAPI) UpdateTemplate(context.Context, openapi.Credential, openapi.UpdateTemplateRequest) error {
+	return nil
+}
+
+func (c *countingOpenAPI) DeleteTemplate(context.Context, openapi.Credential, string) error {
+	return nil
+}
+
+func (c *countingOpenAPI) GetTemplate(context.Context, openapi.Credential, string) (*openapi.Template, error) {
+	return nil, nil
+}
+
+func (c *countingOpenAPI) ListTemplates(context.Context, openapi.Credential, openapi.ListTemplatesRequest) (*openapi.TemplateList, error) {
+	return nil, nil
+}
+
+func (c *countingOpenAPI) StartSandbox(context.Context, openapi.Credential, openapi.StartSandboxRequest) (*openapi.StartSandboxResponse, error) {
+	return nil, nil
+}
+
+func (c *countingOpenAPI) UpdateSandbox(context.Context, openapi.Credential, openapi.UpdateSandboxRequest) error {
+	return nil
+}
+
+func (c *countingOpenAPI) DeleteSandbox(_ context.Context, _ openapi.Credential, instanceIDs []string) error {
+	if len(instanceIDs) != 1 || instanceIDs[0] != "sandbox-1" {
+		return apierrors.NewBadRequest("unexpected sandbox ids")
+	}
+	c.deleteSandboxCalls++
+	return nil
+}
+
+func (c *countingOpenAPI) GetSandbox(context.Context, openapi.Credential, string) (*openapi.Sandbox, error) {
+	return nil, nil
+}
+
+func (c *countingOpenAPI) ListSandboxes(context.Context, openapi.Credential, openapi.ListSandboxesRequest) (*openapi.SandboxList, error) {
+	return nil, nil
 }

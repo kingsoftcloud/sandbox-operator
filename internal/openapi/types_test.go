@@ -53,6 +53,33 @@ func TestRequestJSONFieldsMatchOpenAPISource(t *testing.T) {
 	}
 }
 
+func TestPreheatConfigKeepsExplicitDisableValues(t *testing.T) {
+	body, err := json.Marshal(UpdateTemplateRequest{
+		TemplateID: "tpl-1",
+		CreateTemplateRequest: CreateTemplateRequest{
+			PreheatConfig: &PreheatConfig{},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	preheat, ok := payload["PreheatConfig"].(map[string]any)
+	if !ok {
+		t.Fatalf("PreheatConfig must be present, got %s", string(body))
+	}
+	if enabled, ok := preheat["PreheatEnable"].(bool); !ok || enabled {
+		t.Fatalf("PreheatEnable=false must be sent explicitly, got %s", string(body))
+	}
+	if number, ok := preheat["PreheatNumber"].(float64); !ok || number != 0 {
+		t.Fatalf("PreheatNumber=0 must be sent explicitly, got %s", string(body))
+	}
+}
+
 func TestIDResponseNormalization(t *testing.T) {
 	if got := (Template{TemplateID: "tpl-1"}).Identifier(); got != "tpl-1" {
 		t.Fatalf("Template.Identifier() = %q", got)

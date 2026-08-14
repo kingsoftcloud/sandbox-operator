@@ -55,7 +55,30 @@ helm upgrade --install sandbox-operator charts/sandbox-operator \
 make deploy
 ```
 
-两种方式默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`，无需镜像拉取凭据。自建镜像和私有仓库配置见 [部署说明](docs/zh-CN/deployment.md)。
+两种方式默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`，无需镜像拉取凭据。自建镜像和私有仓库配置见 [部署说明](docs/zh-CN/deployment.md)。
+
+常用部署参数：
+
+```bash
+# 原生 Manifest：指定 Operator 命名空间
+make deploy NAMESPACE=sandbox-operator
+
+# 原生 Manifest：指定内网 OpenAPI 地址
+make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
+
+# 可组合指定
+make deploy NAMESPACE=sandbox-operator \
+  OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
+```
+
+Helm 通过 release namespace 和 Chart 值指定：
+
+```bash
+helm upgrade --install sandbox-operator charts/sandbox-operator \
+  -n sandbox-operator \
+  --create-namespace \
+  --set config.openapiBaseURL=http://aicp.cn-beijing-6.inner.api.ksyun.com
+```
 
 ### 2. 在业务命名空间创建 OpenAPI 凭据
 
@@ -94,11 +117,11 @@ kubectl apply -n sandbox-demo -f my-sandbox.yaml
 
 ## Operator 配置
 
-operator 通过 `sandbox-operator-system` 命名空间中的 `sandbox-operator-config` ConfigMap 配置。Helm 可通过 `values.yaml` 覆盖这些值。
+operator 通过其部署命名空间中的 `sandbox-operator-config` ConfigMap 配置，默认命名空间为 `sandbox-operator-system`。Helm 可通过 `values.yaml` 覆盖这些值。
 
 | 名称 | 默认值 | 说明 |
 | --- | --- | --- |
-| `OPENAPI_BASE_URL` | `http://aicp.cn-beijing-6.api.ksyun.com` | Sandbox OpenAPI 地址。金山云内部账号可使用 `http://aicp.cn-beijing-6.inner.api.ksyun.com`。 |
+| `OPENAPI_BASE_URL` | `http://aicp.cn-beijing-6.api.ksyun.com` | Sandbox OpenAPI 地址；可配置为内网地址 `http://aicp.cn-beijing-6.inner.api.ksyun.com`。 |
 | `OPENAPI_AUTH_MODE` | `kop-sigv4` | OpenAPI 认证模式。 |
 | `OPENAPI_SERVICE` | `aicp` | KOP 服务名称。 |
 | `OPENAPI_VERSION` | `2026-04-01` | OpenAPI 版本。 |

@@ -17,7 +17,7 @@
 make deploy
 ```
 
-该命令会按正确顺序应用这些资源，创建 webhook TLS Secret 并写入 webhook CA bundle。默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260707`，无需配置镜像拉取凭据。若使用自行构建的镜像，可在部署时覆盖：
+该命令会按正确顺序应用这些资源，创建 webhook TLS Secret 并写入 webhook CA bundle。默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`，无需配置镜像拉取凭据。若使用自行构建的镜像，可在部署时覆盖：
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
@@ -66,7 +66,7 @@ make purge-crds
 
 `03-config.yaml` 中包含默认 OpenAPI 配置：
 
-- `OPENAPI_BASE_URL=http://aicp.cn-beijing-6.api.ksyun.com`。金山云内部账号部署时可通过 `make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com` 覆盖为内网地址。
+- `OPENAPI_BASE_URL=http://aicp.cn-beijing-6.api.ksyun.com`。需要使用内网地址时，通过 `make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com` 覆盖。
 - `OPENAPI_AUTH_MODE=kop-sigv4`
 - `OPENAPI_SERVICE=aicp`
 - `OPENAPI_VERSION=2026-04-01`

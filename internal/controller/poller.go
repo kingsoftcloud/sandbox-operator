@@ -133,6 +133,9 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 	for i := range local.Items {
 		obj := &local.Items[i]
 		knownNames[obj.Name] = true
+		if !obj.DeletionTimestamp.IsZero() {
+			continue
+		}
 		statusBefore := cloneForCompare(obj.Status)
 		templateID := annotations.Get(obj.Annotations, annotations.TemplateID)
 		if templateID == "" {
@@ -248,6 +251,9 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 	for i := range local.Items {
 		obj := &local.Items[i]
 		knownNames[obj.Name] = true
+		if !obj.DeletionTimestamp.IsZero() {
+			continue
+		}
 		statusBefore := cloneForCompare(obj.Status)
 		sandboxID := annotations.Get(obj.Annotations, annotations.SandboxID)
 		if sandboxID == "" {

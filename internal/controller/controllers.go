@@ -46,15 +46,20 @@ func (r *SandboxTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	if !obj.DeletionTimestamp.IsZero() {
 		if containsString(obj.Finalizers, TemplateFinalizer) {
-			if err := r.deleteTemplateFromOpenAPI(ctx, &obj); err != nil {
-				logger.Error(err, "delete template from openapi failed")
-				if updateErr := r.markTemplateDeleteBlocked(ctx, &obj, err); updateErr != nil {
-					return ctrl.Result{}, updateErr
+			if annotations.Get(obj.Annotations, annotations.DeleteRequested) == "" {
+				if err := r.deleteTemplateFromOpenAPI(ctx, &obj); err != nil {
+					logger.Error(err, "delete template from openapi failed")
+					if updateErr := r.markTemplateDeleteBlocked(ctx, &obj, err); updateErr != nil {
+						return ctrl.Result{}, updateErr
+					}
+					return ctrl.Result{RequeueAfter: FastRequeue}, nil
 				}
-				return ctrl.Result{RequeueAfter: FastRequeue}, nil
+				if err := markDeleteRequested(ctx, r.Client, &obj); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{Requeue: true}, nil
 			}
-			obj.Finalizers = removeString(obj.Finalizers, TemplateFinalizer)
-			return ctrl.Result{}, ignoreConflict(r.Update(ctx, &obj))
+			return ctrl.Result{}, removeFinalizer(ctx, r.Client, &obj, TemplateFinalizer)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -99,12 +104,17 @@ func (r *SandboxReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	if !obj.DeletionTimestamp.IsZero() {
 		if containsString(obj.Finalizers, SandboxFinalizer) {
-			if err := r.deleteSandboxFromOpenAPI(ctx, &obj); err != nil {
-				logger.Error(err, "delete sandbox from openapi failed")
-				return ctrl.Result{}, err
+			if annotations.Get(obj.Annotations, annotations.DeleteRequested) == "" {
+				if err := r.deleteSandboxFromOpenAPI(ctx, &obj); err != nil {
+					logger.Error(err, "delete sandbox from openapi failed")
+					return ctrl.Result{}, err
+				}
+				if err := markDeleteRequested(ctx, r.Client, &obj); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{Requeue: true}, nil
 			}
-			obj.Finalizers = removeString(obj.Finalizers, SandboxFinalizer)
-			return ctrl.Result{}, ignoreConflict(r.Update(ctx, &obj))
+			return ctrl.Result{}, removeFinalizer(ctx, r.Client, &obj, SandboxFinalizer)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -479,4 +489,21 @@ func removeString(items []string, value string) []string {
 		}
 	}
 	return out
+}
+
+// markDeleteRequested persists the successful OpenAPI delete before finalizer
+// removal. If a later metadata update is retried, the external delete is not
+// submitted again.
+func markDeleteRequested(ctx context.Context, c client.Client, obj client.Object) error {
+	base := obj.DeepCopyObject().(client.Object)
+	obj.SetAnnotations(annotations.Set(obj.GetAnnotations(), annotations.DeleteRequested, "true"))
+	return c.Patch(ctx, obj, client.MergeFrom(base))
+}
+
+// removeFinalizer patches only metadata, avoiding conflicts with status writes
+// from the poller while a resource is terminating.
+func removeFinalizer(ctx context.Context, c client.Client, obj client.Object, finalizer string) error {
+	base := obj.DeepCopyObject().(client.Object)
+	obj.SetFinalizers(removeString(obj.GetFinalizers(), finalizer))
+	return c.Patch(ctx, obj, client.MergeFrom(base))
 }
