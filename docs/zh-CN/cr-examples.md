@@ -222,6 +222,7 @@ spec:
         enablePublicSkill: false
 
       # Private 模板预热池目标大小。
+      # 设为 0 表示关闭预热；OpenAPI 同步后仍会保留 targetSize: 0。
       pool:
         targetSize: 1
 

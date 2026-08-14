@@ -172,7 +172,7 @@ kubectl get stpl -n sandbox-demo full-template \
 | `spec.template.spec.ks3MountConfig` | KS3 挂载。 |
 | `spec.template.spec.kpfsMountConfig` | KPFS 挂载。 |
 | `spec.template.spec.observability` | 日志配置。 |
-| `spec.template.spec.pool` | Private 模板预热池目标大小。 |
+| `spec.template.spec.pool` | Private 模板预热池目标大小。`targetSize: 0` 表示关闭预热，OpenAPI 同步后会保留该值。 |
 
 示例：
 

@@ -56,7 +56,7 @@ docker-push: ## Push the container image.
 ##@ Deployment
 
 deploy: ## Deploy the operator to the cluster using raw manifests.
-	IMAGE=$(IMG) IMAGE_PULL_SECRET=$(IMAGE_PULL_SECRET) NAMESPACE=$(NAMESPACE) OPENAPI_BASE_URL=$(OPENAPI_BASE_URL) ./scripts/deploy.sh
+	IMAGE=$(IMG) IMAGE_PULL_SECRET=$(IMAGE_PULL_SECRET) NAMESPACE=$(NAMESPACE) OPENAPI_BASE_URL=$(OPENAPI_BASE_URL) POLL_INTERVAL=$(POLL_INTERVAL) ./scripts/deploy.sh
 
 undeploy: ## Undeploy the operator from the cluster.
 	NAMESPACE=$(NAMESPACE) ./scripts/undeploy.sh

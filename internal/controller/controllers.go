@@ -59,6 +59,13 @@ func (r *SandboxTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 				}
 				return ctrl.Result{Requeue: true}, nil
 			}
+			deleted, err := r.templateDeletedFromOpenAPI(ctx, &obj)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if !deleted {
+				return ctrl.Result{RequeueAfter: FastRequeue}, nil
+			}
 			return ctrl.Result{}, removeFinalizer(ctx, r.Client, &obj, TemplateFinalizer)
 		}
 		return ctrl.Result{}, nil
@@ -113,6 +120,13 @@ func (r *SandboxReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					return ctrl.Result{}, err
 				}
 				return ctrl.Result{Requeue: true}, nil
+			}
+			deleted, err := r.sandboxDeletedFromOpenAPI(ctx, &obj)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if !deleted {
+				return ctrl.Result{RequeueAfter: FastRequeue}, nil
 			}
 			return ctrl.Result{}, removeFinalizer(ctx, r.Client, &obj, SandboxFinalizer)
 		}
@@ -328,6 +342,29 @@ func (r *SandboxTemplateReconciler) deleteTemplateFromOpenAPI(ctx context.Contex
 	return err
 }
 
+// templateDeletedFromOpenAPI keeps the finalizer until the detail endpoint no
+// longer exposes the template. List and detail endpoints can lag behind a
+// successful delete, and removing the finalizer earlier would let the poller
+// adopt that stale remote item again.
+func (r *SandboxTemplateReconciler) templateDeletedFromOpenAPI(ctx context.Context, obj *sandboxv1.SandboxTemplate) (bool, error) {
+	templateID := annotations.Get(obj.Annotations, annotations.TemplateID)
+	if templateID == "" || r.Credentials == nil || r.OpenAPI == nil {
+		return true, nil
+	}
+	cred, err := r.Credentials.GetOpenAPI(ctx, obj.Namespace, obj.Spec.OpenAPICredentialRef)
+	if err != nil {
+		return false, err
+	}
+	remote, err := r.OpenAPI.GetTemplate(ctx, mapper.OpenAPICredential(cred), templateID)
+	if openapi.IsNotFound(err) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return remote == nil, nil
+}
+
 func (r *SandboxTemplateReconciler) markTemplateDeleteBlocked(ctx context.Context, obj *sandboxv1.SandboxTemplate, cause error) error {
 	statusBefore := cloneForCompare(obj.Status)
 	obj.Status.CanDelete = false
@@ -368,6 +405,42 @@ func (r *SandboxReconciler) deleteSandboxFromOpenAPI(ctx context.Context, obj *s
 		return nil
 	}
 	return err
+}
+
+// sandboxDeletedFromOpenAPI is the deletion barrier for a sandbox and its
+// inline template. It makes remote deletion idempotent while preventing a
+// stale list/detail response from recreating the CR before finalizer removal.
+func (r *SandboxReconciler) sandboxDeletedFromOpenAPI(ctx context.Context, obj *sandboxv1.Sandbox) (bool, error) {
+	if r.Credentials == nil || r.OpenAPI == nil {
+		return true, nil
+	}
+	cred, err := r.Credentials.GetOpenAPI(ctx, obj.Namespace, obj.Spec.OpenAPICredentialRef)
+	if err != nil {
+		return false, err
+	}
+	openapiCred := mapper.OpenAPICredential(cred)
+	sandboxID := annotations.Get(obj.Annotations, annotations.SandboxID)
+	if sandboxID != "" {
+		remote, err := r.OpenAPI.GetSandbox(ctx, openapiCred, sandboxID)
+		if err != nil && !openapi.IsNotFound(err) {
+			return false, err
+		}
+		if err == nil && remote != nil {
+			return false, nil
+		}
+	}
+	if annotations.Get(obj.Annotations, annotations.InlineTemplate) != "true" {
+		return true, nil
+	}
+	templateID := annotations.Get(obj.Annotations, annotations.TemplateID)
+	if templateID == "" {
+		return true, nil
+	}
+	remote, err := r.OpenAPI.GetTemplate(ctx, openapiCred, templateID)
+	if err != nil && !openapi.IsNotFound(err) {
+		return false, err
+	}
+	return err != nil || remote == nil, nil
 }
 
 func (r *SandboxClaimReconciler) ensureClaimSandboxes(ctx context.Context, claim *sandboxv1.SandboxClaim) error {
@@ -445,10 +518,20 @@ func isTerminalClaimPhase(phase sandboxv1.Phase) bool {
 }
 
 func (r *SandboxTemplateReconciler) handleMissingTemplate(ctx context.Context, obj *sandboxv1.SandboxTemplate) error {
+	if obj.DeletionTimestamp.IsZero() && annotations.Get(obj.Annotations, annotations.DeleteRequested) == "" {
+		if err := markDeleteRequested(ctx, r.Client, obj); err != nil {
+			return err
+		}
+	}
 	return client.IgnoreNotFound(r.Delete(ctx, obj))
 }
 
 func (r *SandboxReconciler) handleMissingSandbox(ctx context.Context, obj *sandboxv1.Sandbox) error {
+	if obj.DeletionTimestamp.IsZero() && annotations.Get(obj.Annotations, annotations.DeleteRequested) == "" {
+		if err := markDeleteRequested(ctx, r.Client, obj); err != nil {
+			return err
+		}
+	}
 	return client.IgnoreNotFound(r.Delete(ctx, obj))
 }
 

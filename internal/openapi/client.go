@@ -169,15 +169,21 @@ func (c *Client) action(ctx context.Context, cred Credential, action string, pay
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		code, message := responseError(envelope, responseBody)
-		logger.Error(fmt.Errorf("openapi %s failed", action), "openapi error",
+		apiErr := &APIError{Action: action, StatusCode: resp.StatusCode, RequestID: respReqID, Code: code, Message: message}
+		values := []any{
 			"action", action,
 			"requestID", respReqID,
 			"statusCode", resp.StatusCode,
 			"code", code,
 			"message", message,
 			"responseBody", string(responseBody),
-		)
-		return &APIError{Action: action, StatusCode: resp.StatusCode, RequestID: respReqID, Code: code, Message: message}
+		}
+		if IsNotFound(apiErr) {
+			logger.V(1).Info("openapi resource not found", values...)
+		} else {
+			logger.Error(fmt.Errorf("openapi %s failed", action), "openapi error", values...)
+		}
+		return apiErr
 	}
 
 	logger.V(1).Info("openapi response",

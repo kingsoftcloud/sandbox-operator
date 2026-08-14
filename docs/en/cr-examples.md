@@ -223,6 +223,7 @@ spec:
         enablePublicSkill: false
 
       # Private template preheat pool target size.
+      # Set to 0 to disable preheating; OpenAPI sync keeps targetSize: 0.
       pool:
         targetSize: 1
 

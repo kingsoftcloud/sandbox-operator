@@ -80,6 +80,52 @@ func TestPreheatConfigKeepsExplicitDisableValues(t *testing.T) {
 	}
 }
 
+func TestUpdateRequestKeepsExplicitDisableAndClearValues(t *testing.T) {
+	emptyCommand := ""
+	emptyPorts := []int{}
+	emptyEnvs := []Env{}
+	body, err := json.Marshal(UpdateTemplateRequest{
+		TemplateID: "tpl-1",
+		CreateTemplateRequest: CreateTemplateRequest{
+			KecConfig:       &KecConfig{Enabled: false},
+			NetworkConfig:   &NetworkConfig{},
+			KlogConfig:      &KlogConfig{Enabled: false},
+			SkillConfig:     &SkillConfig{Enable: false, SpaceIDs: []string{}, EnablePublicSkill: false},
+			KS3MountConfig:  &KS3MountConfigRequest{Enabled: false, MountPoints: []MountPoint{}},
+			KPFSMountConfig: &KPFSMountConfigRequest{Enabled: false, MountPoints: []MountPoint{}},
+		},
+		Command: &emptyCommand,
+		Ports:   &emptyPorts,
+		Envs:    &emptyEnvs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	assertJSONBool(t, payload, "KecConfig", "KecEnable", false)
+	assertJSONBool(t, payload, "NetworkConfig", "PublicNetworkEnable", false)
+	assertJSONBool(t, payload, "NetworkConfig", "PrivateNetworkEnable", false)
+	assertJSONBool(t, payload, "NetworkConfig", "SharedInternetAccessEnable", false)
+	assertJSONBool(t, payload, "KlogConfig", "KlogEnable", false)
+	assertJSONBool(t, payload, "SkillConfig", "SkillEnable", false)
+	assertJSONBool(t, payload, "SkillConfig", "PublicSkillEnable", false)
+	assertJSONBool(t, payload, "Ks3MountConfig", "Ks3Enable", false)
+	assertJSONBool(t, payload, "KpfsMountConfig", "KpfsEnable", false)
+
+	for _, key := range []string{"Command", "Ports", "Envs"} {
+		if _, ok := payload[key]; !ok {
+			t.Fatalf("%s must be included for an explicit clear, got %s", key, string(body))
+		}
+	}
+	if skill, ok := payload["SkillConfig"].(map[string]any); !ok || skill["SkillSpaceIds"] == nil {
+		t.Fatalf("SkillSpaceIds=[] must be included for an explicit clear, got %s", string(body))
+	}
+}
+
 func TestIDResponseNormalization(t *testing.T) {
 	if got := (Template{TemplateID: "tpl-1"}).Identifier(); got != "tpl-1" {
 		t.Fatalf("Template.Identifier() = %q", got)
@@ -178,4 +224,16 @@ func jsonArrayFieldExists(raw []byte, key string) bool {
 	}
 	_, ok := obj[key].([]any)
 	return ok
+}
+
+func assertJSONBool(t *testing.T, payload map[string]any, objectKey, fieldKey string, expected bool) {
+	t.Helper()
+	object, ok := payload[objectKey].(map[string]any)
+	if !ok {
+		t.Fatalf("%s must be an object, got %#v", objectKey, payload[objectKey])
+	}
+	actual, ok := object[fieldKey].(bool)
+	if !ok || actual != expected {
+		t.Fatalf("%s.%s = %#v, want %t", objectKey, fieldKey, object[fieldKey], expected)
+	}
 }

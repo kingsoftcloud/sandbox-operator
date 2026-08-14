@@ -7,6 +7,7 @@ NAMESPACE="${NAMESPACE:-sandbox-operator-system}"
 SERVICE_NAME="${SERVICE_NAME:-sandbox-operator-webhook}"
 TLS_SECRET="${TLS_SECRET:-sandbox-operator-webhook-server-cert}"
 OPENAPI_BASE_URL="${OPENAPI_BASE_URL:-http://aicp.cn-beijing-6.api.ksyun.com}"
+POLL_INTERVAL="${POLL_INTERVAL:-30s}"
 
 require() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -23,11 +24,13 @@ validate_namespace() {
 }
 
 render_manifest() {
-  local escaped_openapi_base_url
+  local escaped_openapi_base_url escaped_poll_interval
   escaped_openapi_base_url="$(printf '%s' "${OPENAPI_BASE_URL}" | sed 's/[\\&|]/\\\\&/g')"
+  escaped_poll_interval="$(printf '%s' "${POLL_INTERVAL}" | sed 's/[\\&|]/\\\\&/g')"
   sed \
     -e "s|sandbox-operator-system|${NAMESPACE}|g" \
     -e "s|http://aicp.cn-beijing-6.api.ksyun.com|${escaped_openapi_base_url}|g" \
+    -e "s|POLL_INTERVAL: \"30s\"|POLL_INTERVAL: \"${escaped_poll_interval}\"|g" \
     "$1"
 }
 

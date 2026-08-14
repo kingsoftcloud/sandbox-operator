@@ -570,8 +570,8 @@ func (h *Handler) validateTemplateMountCredentialRefs(obj *sandboxv1.SandboxTemp
 	if obj.Spec.Template == nil {
 		return nil
 	}
-	needStorage := (req.KS3MountConfig != nil && req.KS3MountConfig.EnableKS3) ||
-		(req.KPFSMountConfig != nil && req.KPFSMountConfig.EnableKPFS)
+	needStorage := (req.KS3MountConfig != nil && req.KS3MountConfig.Enabled) ||
+		(req.KPFSMountConfig != nil && req.KPFSMountConfig.Enabled)
 	if !needStorage {
 		return nil
 	}
@@ -586,8 +586,8 @@ func (h *Handler) validateTemplateCreateMountCredentialRefs(obj *sandboxv1.Sandb
 	if obj.Spec.Template == nil {
 		return nil
 	}
-	needStorage := (req.KS3MountConfig != nil && req.KS3MountConfig.EnableKS3) ||
-		(req.KPFSMountConfig != nil && req.KPFSMountConfig.EnableKPFS)
+	needStorage := (req.KS3MountConfig != nil && req.KS3MountConfig.Enabled) ||
+		(req.KPFSMountConfig != nil && req.KPFSMountConfig.Enabled)
 	if !needStorage {
 		return nil
 	}

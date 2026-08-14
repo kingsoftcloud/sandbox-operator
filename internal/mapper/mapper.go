@@ -44,8 +44,8 @@ func TemplateCreateRequest(in *sandboxv1.SandboxTemplate, runtime RuntimeCredent
 		Envs:             templateEnv(tpl),
 		NetworkConfig:    templateNetwork(tpl),
 		PreheatConfig:    templatePreheat(spec),
-		KS3MountConfig:   mountToOpenAPI(tpl.Ks3MountConfig, "ks3"),
-		KPFSMountConfig:  mountToOpenAPI(tpl.KpfsMountConfig, "kpfs"),
+		KS3MountConfig:   ks3MountToOpenAPI(tpl.Ks3MountConfig),
+		KPFSMountConfig:  kpfsMountToOpenAPI(tpl.KpfsMountConfig),
 		KlogConfig:       templateKlogToOpenAPI(spec),
 		SkillConfig:      templateSkillToOpenAPI(tpl),
 		InstanceQuota:    templatePoolInstanceQuota(spec),
@@ -86,11 +86,24 @@ func SandboxInlineTemplateObject(in *sandboxv1.Sandbox) *sandboxv1.SandboxTempla
 }
 
 func TemplateUpdateRequest(in *sandboxv1.SandboxTemplate, runtime RuntimeCredentials) openapi.UpdateTemplateRequest {
-	req := TemplateCreateRequest(in, runtime)
-	return openapi.UpdateTemplateRequest{
+	full := TemplateCreateRequest(in, runtime)
+	req := openapi.UpdateTemplateRequest{
 		TemplateID:            annotations.Get(in.Annotations, annotations.TemplateID),
-		CreateTemplateRequest: req,
+		CreateTemplateRequest: full,
 	}
+	command := full.Command
+	ports := full.Ports
+	envs := full.Envs
+	if ports == nil {
+		ports = []int{}
+	}
+	if envs == nil {
+		envs = []openapi.Env{}
+	}
+	req.Command = &command
+	req.Ports = &ports
+	req.Envs = &envs
+	return req
 }
 
 func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime RuntimeCredentials) openapi.UpdateTemplateRequest {
@@ -115,10 +128,15 @@ func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime R
 		req.ImageConfig = full.ImageConfig
 	}
 	if !reflect.DeepEqual(templatePortsSpec(inTpl), templatePortsSpec(oldTpl)) {
-		req.Ports = full.Ports
+		ports := full.Ports
+		if ports == nil {
+			ports = []int{}
+		}
+		req.Ports = &ports
 	}
 	if templateStartCommand(inTpl) != templateStartCommand(oldTpl) {
-		req.Command = full.Command
+		command := full.Command
+		req.Command = &command
 	}
 	if templateCPU(inTpl) != templateCPU(oldTpl) {
 		req.CPU = full.CPU
@@ -128,9 +146,16 @@ func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime R
 	}
 	if !reflect.DeepEqual(templateInstanceSpecs(inTpl), templateInstanceSpecs(oldTpl)) {
 		req.KecConfig = templateKecConfig(inTpl)
+		if req.KecConfig == nil {
+			req.KecConfig = &openapi.KecConfig{Enabled: false}
+		}
 	}
 	if !reflect.DeepEqual(templateEnvSpec(inTpl), templateEnvSpec(oldTpl)) {
-		req.Envs = full.Envs
+		envs := full.Envs
+		if envs == nil {
+			envs = []openapi.Env{}
+		}
+		req.Envs = &envs
 	}
 	if !reflect.DeepEqual(templateNetworkSpec(inTpl), templateNetworkSpec(oldTpl)) {
 		req.NetworkConfig = full.NetworkConfig
@@ -141,8 +166,8 @@ func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime R
 	ks3Changed := !reflect.DeepEqual(inTpl.Ks3MountConfig, oldTpl.Ks3MountConfig)
 	kpfsChanged := !reflect.DeepEqual(inTpl.KpfsMountConfig, oldTpl.KpfsMountConfig)
 	if ks3Changed || kpfsChanged {
-		req.KS3MountConfig = mountUpdateToOpenAPI(inTpl.Ks3MountConfig, "ks3")
-		req.KPFSMountConfig = mountUpdateToOpenAPI(inTpl.KpfsMountConfig, "kpfs")
+		req.KS3MountConfig = ks3MountUpdateToOpenAPI(inTpl.Ks3MountConfig)
+		req.KPFSMountConfig = kpfsMountUpdateToOpenAPI(inTpl.KpfsMountConfig)
 		req.AccessKey = full.AccessKey
 		req.SecretAccessKey = full.SecretAccessKey
 	}
@@ -156,13 +181,13 @@ func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime R
 }
 
 func TemplateRequestNeedsStorageCredential(req openapi.UpdateTemplateRequest) bool {
-	return (req.KS3MountConfig != nil && req.KS3MountConfig.EnableKS3) ||
-		(req.KPFSMountConfig != nil && req.KPFSMountConfig.EnableKPFS)
+	return (req.KS3MountConfig != nil && req.KS3MountConfig.Enabled) ||
+		(req.KPFSMountConfig != nil && req.KPFSMountConfig.Enabled)
 }
 
 func TemplateCreateRequestNeedsStorageCredential(req openapi.CreateTemplateRequest) bool {
-	return (req.KS3MountConfig != nil && req.KS3MountConfig.EnableKS3) ||
-		(req.KPFSMountConfig != nil && req.KPFSMountConfig.EnableKPFS)
+	return (req.KS3MountConfig != nil && req.KS3MountConfig.Enabled) ||
+		(req.KPFSMountConfig != nil && req.KPFSMountConfig.Enabled)
 }
 
 func SandboxStartRequest(in *sandboxv1.Sandbox, templateID string, runtime RuntimeCredentials) openapi.StartSandboxRequest {
@@ -171,16 +196,16 @@ func SandboxStartRequest(in *sandboxv1.Sandbox, templateID string, runtime Runti
 		TemplateID:      templateID,
 		Timeout:         spec.TimeoutSeconds,
 		Envs:            envsToOpenAPI(spec.Env),
-		KS3MountConfig:  mountToOpenAPI(spec.Ks3MountConfig, "ks3"),
-		KPFSMountConfig: mountToOpenAPI(spec.KpfsMountConfig, "kpfs"),
+		KS3MountConfig:  ks3MountToOpenAPI(spec.Ks3MountConfig),
+		KPFSMountConfig: kpfsMountToOpenAPI(spec.KpfsMountConfig),
 		AccessKey:       sandboxStorageAccessKey(runtime),
 		SecretAccessKey: sandboxStorageSecretAccessKey(runtime),
 	}
 }
 
 func SandboxRequestNeedsStorageCredential(req openapi.StartSandboxRequest) bool {
-	return (req.KS3MountConfig != nil && req.KS3MountConfig.EnableKS3) ||
-		(req.KPFSMountConfig != nil && req.KPFSMountConfig.EnableKPFS)
+	return (req.KS3MountConfig != nil && req.KS3MountConfig.Enabled) ||
+		(req.KPFSMountConfig != nil && req.KPFSMountConfig.Enabled)
 }
 
 func SandboxUpdateRequest(in *sandboxv1.Sandbox) openapi.UpdateSandboxRequest {
@@ -205,10 +230,11 @@ func ApplyTemplateSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi
 		if tpl != nil {
 			tpl.Pool = nil
 		}
-	} else if remote.TargetPoolSize() > 0 {
-		tpl.Pool = &sandboxv1.TemplatePoolSpec{TargetSize: remote.TargetPoolSize()}
 	} else if tpl != nil {
-		tpl.Pool = nil
+		// Private templates always expose the target pool size. A zero value
+		// explicitly represents a disabled preheat pool instead of an omitted
+		// configuration, which keeps CR spec stable after OpenAPI sync.
+		tpl.Pool = &sandboxv1.TemplatePoolSpec{TargetSize: remote.TargetPoolSize()}
 	}
 }
 
@@ -597,13 +623,14 @@ func templateAccessIsPublic(value string) bool {
 }
 
 func templateKecConfig(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.KecConfig {
-	if specs := templateInstanceSpecs(tpl); len(specs) > 0 {
-		return &openapi.KecConfig{
-			Enabled:       true,
-			InstanceSpecs: instanceSpecsToOpenAPI(specs),
-		}
+	if tpl == nil || tpl.KecConfig == nil {
+		return nil
 	}
-	return nil
+	specs := templateInstanceSpecs(tpl)
+	return &openapi.KecConfig{
+		Enabled:       len(specs) > 0,
+		InstanceSpecs: instanceSpecsToOpenAPI(specs),
+	}
 }
 
 func instanceSpecsToOpenAPI(in []sandboxv1.KecInstanceSpec) []openapi.InstanceSpec {
@@ -679,15 +706,12 @@ func templateSkillToOpenAPI(tpl *sandboxv1.RuntimeTemplateSpec) *openapi.SkillCo
 	}
 	return &openapi.SkillConfig{
 		Enable:            tpl.SkillConfig.Enable,
-		SpaceIDs:          append([]string(nil), tpl.SkillConfig.SpaceIDs...),
+		SpaceIDs:          append([]string{}, tpl.SkillConfig.SpaceIDs...),
 		EnablePublicSkill: tpl.SkillConfig.EnablePublicSkill,
 	}
 }
 
 func dataDiskSpecsToOpenAPI(in []sandboxv1.DataDiskSpec) []openapi.DataDisk {
-	if len(in) == 0 {
-		return nil
-	}
 	out := make([]openapi.DataDisk, 0, len(in))
 	for _, disk := range in {
 		out = append(out, openapi.DataDisk{
@@ -1004,34 +1028,38 @@ func displayTemplateType(value string) string {
 	}
 }
 
-func mountToOpenAPI(in *sandboxv1.MountConfig, kind string) *openapi.MountConfig {
+func ks3MountToOpenAPI(in *sandboxv1.MountConfig) *openapi.KS3MountConfigRequest {
 	if in == nil {
 		return nil
 	}
-	out := &openapi.MountConfig{}
-	switch kind {
-	case "ks3":
-		out.EnableKS3 = in.Enabled
-		out.MountPoints = mountPointsToOpenAPI(in.MountPoints)
-	case "kpfs":
-		out.EnableKPFS = in.Enabled
-		out.KPFSMounts = mountPointsToOpenAPI(in.MountPoints)
+	return &openapi.KS3MountConfigRequest{
+		Enabled:     in.Enabled,
+		MountPoints: mountPointsToOpenAPI(in.MountPoints),
 	}
-	return out
 }
 
-func mountUpdateToOpenAPI(cfg *sandboxv1.MountConfig, kind string) *openapi.MountConfig {
-	if cfg != nil && cfg.Enabled {
-		return mountToOpenAPI(cfg, kind)
-	}
-	switch kind {
-	case "ks3":
-		return &openapi.MountConfig{EnableKS3: false}
-	case "kpfs":
-		return &openapi.MountConfig{EnableKPFS: false}
-	default:
+func kpfsMountToOpenAPI(in *sandboxv1.MountConfig) *openapi.KPFSMountConfigRequest {
+	if in == nil {
 		return nil
 	}
+	return &openapi.KPFSMountConfigRequest{
+		Enabled:     in.Enabled,
+		MountPoints: mountPointsToOpenAPI(in.MountPoints),
+	}
+}
+
+func ks3MountUpdateToOpenAPI(cfg *sandboxv1.MountConfig) *openapi.KS3MountConfigRequest {
+	if cfg == nil {
+		return &openapi.KS3MountConfigRequest{Enabled: false, MountPoints: []openapi.MountPoint{}}
+	}
+	return ks3MountToOpenAPI(cfg)
+}
+
+func kpfsMountUpdateToOpenAPI(cfg *sandboxv1.MountConfig) *openapi.KPFSMountConfigRequest {
+	if cfg == nil {
+		return &openapi.KPFSMountConfigRequest{Enabled: false, MountPoints: []openapi.MountPoint{}}
+	}
+	return kpfsMountToOpenAPI(cfg)
 }
 
 func mountPointsToOpenAPI(in []sandboxv1.MountPoint) []openapi.MountPoint {

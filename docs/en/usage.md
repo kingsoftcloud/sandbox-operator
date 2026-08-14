@@ -172,7 +172,7 @@ When you modify `SandboxTemplate.spec`, the validating webhook computes the diff
 | `spec.template.spec.ks3MountConfig` | KS3 mount. |
 | `spec.template.spec.kpfsMountConfig` | KPFS mount. |
 | `spec.template.spec.observability` | Logging configuration. |
-| `spec.template.spec.pool` | Private template preheat pool target size. |
+| `spec.template.spec.pool` | Private template preheat pool target size. `targetSize: 0` disables preheating and remains visible after OpenAPI sync. |
 
 Example:
 

@@ -87,6 +87,16 @@ make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
 
 Repeating this command rolls the operator so the new ConfigMap endpoint takes effect immediately.
 
+## Configure the Polling Interval
+
+`POLL_INTERVAL` uses the Go duration format. For example, use `500ms` for a short load test:
+
+```bash
+make deploy POLL_INTERVAL=500ms
+```
+
+The command writes the value to the operator ConfigMap and rolls the Deployment. Each poll scans namespaces with OpenAPI credentials and reads remote resources. Keep the default `30s` in production; do not use `500ms` as a long-running setting.
+
 ## Webhook Certificates
 
 Helm generates a self-signed webhook certificate by default. To use an existing cert-manager installation:

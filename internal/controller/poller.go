@@ -133,15 +133,17 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 	for i := range local.Items {
 		obj := &local.Items[i]
 		knownNames[obj.Name] = true
+		templateID := annotations.Get(obj.Annotations, annotations.TemplateID)
+		if templateID != "" {
+			knownIDs[templateID] = true
+		}
 		if !obj.DeletionTimestamp.IsZero() {
 			continue
 		}
 		statusBefore := cloneForCompare(obj.Status)
-		templateID := annotations.Get(obj.Annotations, annotations.TemplateID)
 		if templateID == "" {
 			continue
 		}
-		knownIDs[templateID] = true
 		remote, err := p.OpenAPI.GetTemplate(ctx, cred, templateID)
 		if err != nil {
 			if openapi.IsNotFound(err) {
@@ -231,10 +233,20 @@ func (p *Poller) syncTemplates(ctx context.Context, namespace string, cred opena
 }
 
 func (p *Poller) handleMissingTemplate(ctx context.Context, obj *sandboxv1.SandboxTemplate) error {
+	if obj.DeletionTimestamp.IsZero() && annotations.Get(obj.Annotations, annotations.DeleteRequested) == "" {
+		if err := markDeleteRequested(ctx, p.Client, obj); err != nil {
+			return err
+		}
+	}
 	return client.IgnoreNotFound(p.Client.Delete(ctx, obj))
 }
 
 func (p *Poller) handleMissingSandbox(ctx context.Context, obj *sandboxv1.Sandbox) error {
+	if obj.DeletionTimestamp.IsZero() && annotations.Get(obj.Annotations, annotations.DeleteRequested) == "" {
+		if err := markDeleteRequested(ctx, p.Client, obj); err != nil {
+			return err
+		}
+	}
 	return client.IgnoreNotFound(p.Client.Delete(ctx, obj))
 }
 
@@ -251,16 +263,18 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 	for i := range local.Items {
 		obj := &local.Items[i]
 		knownNames[obj.Name] = true
+		sandboxID := annotations.Get(obj.Annotations, annotations.SandboxID)
+		if sandboxID != "" {
+			knownIDs[sandboxID] = true
+			knownByID[sandboxID] = obj
+		}
 		if !obj.DeletionTimestamp.IsZero() {
 			continue
 		}
 		statusBefore := cloneForCompare(obj.Status)
-		sandboxID := annotations.Get(obj.Annotations, annotations.SandboxID)
 		if sandboxID == "" {
 			continue
 		}
-		knownIDs[sandboxID] = true
-		knownByID[sandboxID] = obj
 		remote, err := p.OpenAPI.GetSandbox(ctx, cred, sandboxID)
 		if err != nil {
 			if openapi.IsNotFound(err) {
@@ -312,6 +326,17 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 				}
 				continue
 			}
+			// List responses may retain an asynchronously deleted instance for a
+			// short period. Verify the detail endpoint before adopting it; this
+			// prevents a stale list item from recreating a just-deleted CR.
+			detail, err := p.OpenAPI.GetSandbox(ctx, cred, sandboxID)
+			if err != nil {
+				if openapi.IsNotFound(err) {
+					continue
+				}
+				return err
+			}
+			remote = *detail
 			logger.V(1).Info("listed sandbox from openapi",
 				append([]any{"sandboxID", sandboxID}, sandboxOpenAPIDebugValues(remote)...)...)
 			name := uniqueName(externalResourceName(remote.Name(), sandboxID), knownNames)

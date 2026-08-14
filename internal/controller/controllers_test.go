@@ -277,8 +277,170 @@ func TestDeletingSandboxSubmitsOpenAPIDeleteOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestDeletingSandboxWaitsForDetailEndpointToDisappear(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	if err := sandboxv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	now := metav1.Now()
+	sandbox := &sandboxv1.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "delete-with-lag",
+			Namespace:         "sandbox-demo",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{SandboxFinalizer},
+			Annotations: map[string]string{
+				annotations.SandboxID: "sandbox-1",
+			},
+		},
+	}
+	credential := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: credentials.DefaultOpenAPISecretName, Namespace: sandbox.Namespace},
+		Data: map[string][]byte{
+			credentials.KeyAccessKeyID:     []byte("ak"),
+			credentials.KeySecretAccessKey: []byte("sk"),
+			credentials.KeyRegion:          []byte("cn-beijing-6"),
+		},
+	}
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(sandbox, credential).
+		WithStatusSubresource(&sandboxv1.Sandbox{}).
+		Build()
+	api := &eventuallyDeletedSandboxOpenAPI{detailVisible: true}
+	reconciler := &SandboxReconciler{
+		Client:      c,
+		Credentials: credentials.NewManager(c, credentials.DefaultOpenAPISecretName),
+		OpenAPI:     api,
+	}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name}}
+
+	if _, err := reconciler.Reconcile(ctx, request); err != nil {
+		t.Fatalf("submit delete: %v", err)
+	}
+	result, err := reconciler.Reconcile(ctx, request)
+	if err != nil {
+		t.Fatalf("wait for delayed detail endpoint: %v", err)
+	}
+	if result.RequeueAfter != FastRequeue || api.deleteSandboxCalls != 1 {
+		t.Fatalf("must wait without another delete, result=%#v calls=%d", result, api.deleteSandboxCalls)
+	}
+
+	api.detailVisible = false
+	if _, err := reconciler.Reconcile(ctx, request); err != nil {
+		t.Fatalf("complete deletion after detail disappears: %v", err)
+	}
+	var deleted sandboxv1.Sandbox
+	if err := c.Get(ctx, request.NamespacedName, &deleted); !apierrors.IsNotFound(err) {
+		t.Fatalf("sandbox should be removed after detail disappears, get err=%v", err)
+	}
+	if api.deleteSandboxCalls != 1 {
+		t.Fatalf("detail lag must not repeat external delete, calls=%d", api.deleteSandboxCalls)
+	}
+}
+
+func TestMissingSandboxDoesNotSubmitAnotherDelete(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	if err := sandboxv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	sandbox := &sandboxv1.Sandbox{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "missing-sandbox",
+			Namespace:  "sandbox-demo",
+			Finalizers: []string{SandboxFinalizer},
+			Annotations: map[string]string{
+				annotations.SandboxID: "sandbox-1",
+			},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox).Build()
+	api := &countingOpenAPI{}
+	reconciler := &SandboxReconciler{Client: c, OpenAPI: api}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name}}
+
+	if err := reconciler.handleMissingSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("handle missing sandbox: %v", err)
+	}
+	var terminating sandboxv1.Sandbox
+	if err := c.Get(ctx, request.NamespacedName, &terminating); err != nil {
+		t.Fatalf("get terminating sandbox: %v", err)
+	}
+	if annotations.Get(terminating.Annotations, annotations.DeleteRequested) != "true" {
+		t.Fatalf("missing sandbox must skip remote deletion: %#v", terminating.Annotations)
+	}
+
+	if _, err := reconciler.Reconcile(ctx, request); err != nil {
+		t.Fatalf("reconcile terminating sandbox: %v", err)
+	}
+	if api.deleteSandboxCalls != 0 {
+		t.Fatalf("a sandbox already absent from OpenAPI must not be deleted again, calls=%d", api.deleteSandboxCalls)
+	}
+}
+
+func TestPollerDoesNotAdoptStaleSandboxListItem(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	if err := sandboxv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	api := &staleSandboxOpenAPI{}
+	poller := &Poller{Client: c, OpenAPI: api, AdoptExternal: true}
+	if err := poller.syncSandboxes(ctx, "sandbox-demo", openapi.Credential{}); err != nil {
+		t.Fatalf("sync stale sandbox list: %v", err)
+	}
+	if api.getSandboxCalls != 1 {
+		t.Fatalf("stale sandbox list item must be verified once, calls=%d", api.getSandboxCalls)
+	}
+	var sandboxes sandboxv1.SandboxList
+	if err := c.List(ctx, &sandboxes); err != nil {
+		t.Fatal(err)
+	}
+	if len(sandboxes.Items) != 0 {
+		t.Fatalf("stale list item must not be adopted: %#v", sandboxes.Items)
+	}
+}
+
 type countingOpenAPI struct {
 	deleteSandboxCalls int
+}
+
+type staleSandboxOpenAPI struct {
+	countingOpenAPI
+	getSandboxCalls int
+}
+
+type eventuallyDeletedSandboxOpenAPI struct {
+	countingOpenAPI
+	detailVisible bool
+}
+
+func (c *eventuallyDeletedSandboxOpenAPI) GetSandbox(context.Context, openapi.Credential, string) (*openapi.Sandbox, error) {
+	if c.detailVisible {
+		return &openapi.Sandbox{InstanceID: "sandbox-1"}, nil
+	}
+	return nil, &openapi.APIError{StatusCode: 400, Code: "SandboxNotFound", Message: "sandbox deleted"}
+}
+
+func (c *staleSandboxOpenAPI) GetSandbox(context.Context, openapi.Credential, string) (*openapi.Sandbox, error) {
+	c.getSandboxCalls++
+	return nil, &openapi.APIError{StatusCode: 400, Code: "SandboxNotFound", Message: "sandbox deleted"}
+}
+
+func (c *staleSandboxOpenAPI) ListSandboxes(context.Context, openapi.Credential, openapi.ListSandboxesRequest) (*openapi.SandboxList, error) {
+	return &openapi.SandboxList{
+		Items: []openapi.Sandbox{{InstanceID: "stale-1", SandboxName: "stale-sandbox"}},
+		Total: 1,
+	}, nil
 }
 
 func (c *countingOpenAPI) CreateTemplate(context.Context, openapi.Credential, openapi.CreateTemplateRequest) (*openapi.CreateTemplateResponse, error) {

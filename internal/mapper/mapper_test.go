@@ -76,7 +76,7 @@ func TestTemplateUpdateRequestFromDiffOnlySendsChangedTopLevelFields(t *testing.
 	req = TemplateUpdateRequestFromDiff(changedMount, old, RuntimeCredentials{
 		Storage: &credentials.RuntimeCredential{AccessKey: "ak", SecretAccessKey: "sk"},
 	})
-	if req.KS3MountConfig == nil || !req.KS3MountConfig.EnableKS3 {
+	if req.KS3MountConfig == nil || !req.KS3MountConfig.Enabled {
 		t.Fatalf("changed mount config should be included: %#v", req)
 	}
 	if req.AccessKey != "ak" || req.SecretAccessKey != "sk" {
@@ -86,10 +86,10 @@ func TestTemplateUpdateRequestFromDiffOnlySendsChangedTopLevelFields(t *testing.
 	deletedMount := templateWithKS3("old description", "/mnt/old")
 	deletedMount.Spec.Template.Spec.Ks3MountConfig = nil
 	req = TemplateUpdateRequestFromDiff(deletedMount, old, RuntimeCredentials{})
-	if req.KS3MountConfig == nil || req.KS3MountConfig.EnableKS3 {
+	if req.KS3MountConfig == nil || req.KS3MountConfig.Enabled {
 		t.Fatalf("deleted KS3 mount must send Ks3Enable=false: %#v", req.KS3MountConfig)
 	}
-	if req.KPFSMountConfig == nil || req.KPFSMountConfig.EnableKPFS {
+	if req.KPFSMountConfig == nil || req.KPFSMountConfig.Enabled {
 		t.Fatalf("mount diff must include KpfsEnable=false target state: %#v", req.KPFSMountConfig)
 	}
 }
@@ -346,6 +346,18 @@ func TestPublicTemplateDoesNotUsePoolOrPreheat(t *testing.T) {
 	})
 	if synced.Status.Preheat != nil {
 		t.Fatalf("public template sync should not write status preheat: %#v", synced.Status.Preheat)
+	}
+}
+
+func TestPrivateTemplateKeepsZeroPoolTargetSize(t *testing.T) {
+	var synced sandboxv1.SandboxTemplate
+	ApplyTemplateSpecFromOpenAPI(&synced, openapi.Template{
+		TemplateCategory: "Private",
+		PreheatConfig:    &openapi.PreheatConfig{PreheatEnable: false, PreheatNumber: 0},
+	})
+
+	if synced.Spec.Template == nil || synced.Spec.Template.Spec.Pool == nil || synced.Spec.Template.Spec.Pool.TargetSize != 0 {
+		t.Fatalf("private template must preserve a disabled pool as targetSize=0: %#v", synced.Spec.Template)
 	}
 }
 

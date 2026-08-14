@@ -89,6 +89,16 @@ make deploy OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
 
 重复执行该命令会滚动重启 operator，使新的 ConfigMap 地址立即生效。
 
+## 调整轮询间隔
+
+`POLL_INTERVAL` 使用 Go duration 格式。例如，短时压测可设置为 `500ms`：
+
+```bash
+make deploy POLL_INTERVAL=500ms
+```
+
+该配置会写入 operator 的 ConfigMap 并滚动重启 Deployment。每次轮询会扫描已配置 OpenAPI 凭据的命名空间并读取远端资源；生产环境建议保持默认 `30s`，不要长期使用 `500ms`。
+
 ## Webhook 证书
 
 Helm 默认生成自签 webhook 证书。若集群已安装 cert-manager，可改由 cert-manager 管理：
