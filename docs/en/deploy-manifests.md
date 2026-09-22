@@ -21,7 +21,7 @@ From the repository root, run:
 make deploy
 ```
 
-The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`; no image-pull credential is required. To use your own image, override it at deployment time:
+The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260922`; no image-pull credential is required. To use your own image, override it at deployment time:
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
@@ -41,6 +41,8 @@ For a private registry, create an image pull Secret in the target operator names
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
 ```
+
+Do not run `make undeploy` before an upgrade. Pull the latest source and repeat `make deploy` with the same `NAMESPACE`, `OPENAPI_BASE_URL`, and other installation options. The script updates the CRDs and workload and then rolls the Operator.
 
 Uninstall:
 

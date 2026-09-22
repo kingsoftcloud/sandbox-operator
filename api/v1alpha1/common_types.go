@@ -69,6 +69,7 @@ type RuntimeTemplateSpec struct {
 	StorageCredentialRef *LocalObjectReference `json:"storageCredentialRef,omitempty"`
 	Ks3MountConfig       *MountConfig          `json:"ks3MountConfig,omitempty"`
 	KpfsMountConfig      *MountConfig          `json:"kpfsMountConfig,omitempty"`
+	NfsMountConfig       *MountConfig          `json:"nfsMountConfig,omitempty"`
 	NetworkConfig        *OpenAPINetworkConfig `json:"networkConfig,omitempty"`
 	SkillConfig          *SkillConfig          `json:"skillConfig,omitempty"`
 	Pool                 *TemplatePoolSpec     `json:"pool,omitempty"`
@@ -199,11 +200,13 @@ type MountConfig struct {
 }
 
 type MountPoint struct {
-	BucketName     string `json:"bucketName,omitempty"`
-	FileSystemName string `json:"fileSystemName,omitempty"`
-	RemotePath     string `json:"remotePath,omitempty"`
-	LocalMountPath string `json:"localMountPath,omitempty"`
-	ReadOnly       bool   `json:"readOnly,omitempty"`
+	BucketName     string                 `json:"bucketName,omitempty"`
+	FileSystemName string                 `json:"fileSystemName,omitempty"`
+	Server         string                 `json:"server,omitempty"`
+	RemotePath     string                 `json:"remotePath,omitempty"`
+	LocalMountPath string                 `json:"localMountPath,omitempty"`
+	ReadOnly       bool                   `json:"readOnly,omitempty"`
+	Options        map[string]interface{} `json:"options,omitempty"`
 }
 
 type CredentialDriftStatus struct {

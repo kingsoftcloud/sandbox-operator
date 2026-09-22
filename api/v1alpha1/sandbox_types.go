@@ -29,6 +29,7 @@ type SandboxSpec struct {
 	StorageCredentialRef *LocalObjectReference       `json:"storageCredentialRef,omitempty"`
 	Ks3MountConfig       *MountConfig                `json:"ks3MountConfig,omitempty"`
 	KpfsMountConfig      *MountConfig                `json:"kpfsMountConfig,omitempty"`
+	NfsMountConfig       *MountConfig                `json:"nfsMountConfig,omitempty"`
 }
 
 type SandboxInlineTemplate struct {
@@ -56,6 +57,7 @@ type SandboxStatus struct {
 	Env                 []EnvVar                    `json:"env,omitempty"`
 	Ks3MountConfig      *MountConfig                `json:"ks3MountConfig,omitempty"`
 	KpfsMountConfig     *MountConfig                `json:"kpfsMountConfig,omitempty"`
+	NfsMountConfig      *MountConfig                `json:"nfsMountConfig,omitempty"`
 	CustomConfiguration *SandboxCustomConfiguration `json:"customConfiguration,omitempty"`
 	CredentialDrift     *CredentialDriftSet         `json:"credentialDrift,omitempty"`
 	Conditions          []metav1.Condition          `json:"conditions,omitempty"`

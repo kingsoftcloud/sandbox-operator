@@ -17,7 +17,7 @@ From the repository root, run:
 make deploy
 ```
 
-The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`; no image-pull credential is needed. To use your own image, override it when deploying:
+The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260922`; no image-pull credential is needed. To use your own image, override it when deploying:
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0

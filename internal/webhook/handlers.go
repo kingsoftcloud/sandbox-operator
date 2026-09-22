@@ -389,6 +389,7 @@ func (h *Handler) mutateClaimCreate(ctx context.Context, req admission.Request) 
 				Env:                  obj.Spec.Env,
 				Ks3MountConfig:       obj.Spec.Ks3MountConfig,
 				KpfsMountConfig:      obj.Spec.KpfsMountConfig,
+				NfsMountConfig:       obj.Spec.NfsMountConfig,
 				StorageCredentialRef: obj.Spec.StorageCredentialRef,
 			},
 		}, templateID, runtimeCreds)

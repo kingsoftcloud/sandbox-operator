@@ -59,7 +59,7 @@ Or use the raw manifests:
 make deploy
 ```
 
-Both commands use the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814` and do not require an image-pull credential. To build and use your own image, see the [deployment guide](docs/en/deployment.md).
+Both commands use the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260922` and do not require an image-pull credential. To build and use your own image, see the [deployment guide](docs/en/deployment.md).
 
 Common deployment parameters:
 

@@ -92,6 +92,69 @@ func TestTemplateUpdateRequestFromDiffOnlySendsChangedTopLevelFields(t *testing.
 	if req.KPFSMountConfig == nil || req.KPFSMountConfig.Enabled {
 		t.Fatalf("mount diff must include KpfsEnable=false target state: %#v", req.KPFSMountConfig)
 	}
+
+	nfsChanged := templateWithKS3("old description", "/mnt/old")
+	nfsChanged.Spec.Template.Spec.NfsMountConfig = &sandboxv1.MountConfig{
+		Enabled: true,
+		MountPoints: []sandboxv1.MountPoint{{
+			Server:         "10.0.0.10",
+			RemotePath:     "/exports/data",
+			LocalMountPath: "/mnt/nfs",
+			Options:        map[string]interface{}{"version": "3"},
+		}},
+	}
+	req = TemplateUpdateRequestFromDiff(nfsChanged, old, RuntimeCredentials{})
+	if req.NFSMountConfig == nil || !req.NFSMountConfig.Enabled || len(req.NFSMountConfig.MountPoints) != 1 {
+		t.Fatalf("changed NFS mount config should be included: %#v", req.NFSMountConfig)
+	}
+	if req.AccessKey != "" || req.SecretAccessKey != "" || TemplateRequestNeedsStorageCredential(req) {
+		t.Fatalf("NFS mount config must not require storage credentials: %#v", req)
+	}
+
+	nfsDeleted := templateWithKS3("old description", "/mnt/old")
+	nfsDeleted.Spec.Template.Spec.NfsMountConfig = nil
+	req = TemplateUpdateRequestFromDiff(nfsDeleted, nfsChanged, RuntimeCredentials{})
+	if req.NFSMountConfig == nil || req.NFSMountConfig.Enabled {
+		t.Fatalf("deleted NFS mount must send NfsEnable=false: %#v", req.NFSMountConfig)
+	}
+}
+
+func TestSandboxStartRequestSendsNFSWithoutStorageCredential(t *testing.T) {
+	obj := &sandboxv1.Sandbox{Spec: sandboxv1.SandboxSpec{
+		NfsMountConfig: &sandboxv1.MountConfig{
+			Enabled: true,
+			MountPoints: []sandboxv1.MountPoint{{
+				Server:         "nfs.example.internal",
+				RemotePath:     "/exports/workspace",
+				LocalMountPath: "/mnt/workspace",
+				ReadOnly:       true,
+				Options:        map[string]interface{}{"version": "3", "retryMode": "hard"},
+			}},
+		},
+	}}
+
+	req := SandboxStartRequest(obj, "tpl-1", RuntimeCredentials{})
+	if req.NFSMountConfig == nil || !req.NFSMountConfig.Enabled || len(req.NFSMountConfig.MountPoints) != 1 {
+		t.Fatalf("sandbox NFS mount config mismatch: %#v", req.NFSMountConfig)
+	}
+	point := req.NFSMountConfig.MountPoints[0]
+	if point.Server != "nfs.example.internal" || point.ExportPath != "/exports/workspace" || point.Options["version"] != "3" {
+		t.Fatalf("sandbox NFS mount point mismatch: %#v", point)
+	}
+	if SandboxRequestNeedsStorageCredential(req) {
+		t.Fatalf("NFS must not require storage credentials: %#v", req)
+	}
+}
+
+func TestTemplateCreateRequestSendsNFSWithoutStorageCredential(t *testing.T) {
+	obj := validNFSTemplate()
+	req := TemplateCreateRequest(obj, RuntimeCredentials{})
+	if req.NFSMountConfig == nil || !req.NFSMountConfig.Enabled || len(req.NFSMountConfig.MountPoints) != 1 {
+		t.Fatalf("template NFS mount config mismatch: %#v", req.NFSMountConfig)
+	}
+	if TemplateCreateRequestNeedsStorageCredential(req) {
+		t.Fatalf("NFS template must not require storage credentials: %#v", req)
+	}
 }
 
 func TestTemplateCreateRequestSendsKecInstanceSpecs(t *testing.T) {
@@ -410,6 +473,15 @@ func TestApplySandboxStatusIncludesRuntimeDetails(t *testing.T) {
 				ReadOnly:       false,
 			}},
 		},
+		NFSMountConfig: &openapi.MountConfig{
+			EnableNFS: true,
+			NFSMounts: []openapi.MountPoint{{
+				Server:         "nfs.example.internal",
+				ExportPath:     "/exports/data",
+				LocalMountPath: "/mnt/nfs",
+				Options:        map[string]interface{}{"version": "3"},
+			}},
+		},
 	})
 
 	if obj.Status.Endpoint != "https://endpoint.example.com" {
@@ -438,6 +510,34 @@ func TestApplySandboxStatusIncludesRuntimeDetails(t *testing.T) {
 	}
 	if obj.Status.KpfsMountConfig == nil || len(obj.Status.KpfsMountConfig.MountPoints) != 1 || obj.Status.KpfsMountConfig.MountPoints[0].FileSystemName != "fs-a" {
 		t.Fatalf("sandbox KPFS mount config mismatch: %#v", obj.Status.KpfsMountConfig)
+	}
+	if obj.Status.NfsMountConfig == nil || len(obj.Status.NfsMountConfig.MountPoints) != 1 || obj.Status.NfsMountConfig.MountPoints[0].Server != "nfs.example.internal" || obj.Status.NfsMountConfig.MountPoints[0].RemotePath != "/exports/data" {
+		t.Fatalf("sandbox NFS mount config mismatch: %#v", obj.Status.NfsMountConfig)
+	}
+}
+
+func TestApplyTemplateSpecIncludesNFS(t *testing.T) {
+	var obj sandboxv1.SandboxTemplate
+	ApplyTemplateSpecFromOpenAPI(&obj, openapi.Template{
+		TemplateCategory: "Private",
+		NFSMountConfig: &openapi.MountConfig{
+			EnableNFS: true,
+			NFSMounts: []openapi.MountPoint{{
+				Server:         "10.0.0.10",
+				ExportPath:     "/exports/data",
+				LocalMountPath: "/mnt/data",
+				ReadOnly:       true,
+				Options:        map[string]interface{}{"version": "3"},
+			}},
+		},
+	})
+
+	if obj.Spec.Template == nil || obj.Spec.Template.Spec.NfsMountConfig == nil {
+		t.Fatalf("template NFS mount config was not synced: %#v", obj.Spec.Template)
+	}
+	point := obj.Spec.Template.Spec.NfsMountConfig.MountPoints[0]
+	if point.Server != "10.0.0.10" || point.RemotePath != "/exports/data" || point.Options["version"] != "3" {
+		t.Fatalf("template NFS mount point mismatch: %#v", point)
 	}
 }
 
@@ -532,6 +632,26 @@ func templateWithKS3(description, mountPath string) *sandboxv1.SandboxTemplate {
 						BucketName:     "bucket-a",
 						RemotePath:     "/datasets",
 						LocalMountPath: mountPath,
+					}},
+				},
+			}},
+		},
+	}
+}
+
+func validNFSTemplate() *sandboxv1.SandboxTemplate {
+	return &sandboxv1.SandboxTemplate{
+		Spec: sandboxv1.SandboxTemplateSpec{
+			Access: "Private",
+			Type:   "Custom",
+			Template: &sandboxv1.RuntimeTemplate{Spec: sandboxv1.RuntimeTemplateSpec{
+				NfsMountConfig: &sandboxv1.MountConfig{
+					Enabled: true,
+					MountPoints: []sandboxv1.MountPoint{{
+						Server:         "10.0.0.10",
+						RemotePath:     "/exports/data",
+						LocalMountPath: "/mnt/nfs",
+						Options:        map[string]interface{}{"version": "3"},
 					}},
 				},
 			}},

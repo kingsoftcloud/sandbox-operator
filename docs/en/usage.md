@@ -71,6 +71,7 @@ The following field mapping applies:
 | environment variables | `spec.template.spec.env` |
 | KS3 mount | `spec.template.spec.ks3MountConfig` |
 | KPFS mount | `spec.template.spec.kpfsMountConfig` |
+| NFS mount | `spec.template.spec.nfsMountConfig` |
 | network | `spec.template.spec.networkConfig` |
 | skill configuration | `spec.template.spec.skillConfig` |
 | logging configuration | `spec.template.spec.observability` |
@@ -81,7 +82,7 @@ The following field mapping applies:
 
 When `spec.template.spec.networkConfig` is omitted or set to `{}`, the operator calls OpenAPI with public access only and `SharedInternetAccessEnable=true`.
 
-CRs synced from OpenAPI do not automatically create or write back Kubernetes Secrets. Image registry, KS3, KPFS, Klog, and other credentials are not reverse-generated from OpenAPI. If you later need to modify image or mount-related fields in the cluster, create the corresponding Secrets in the same namespace and add `registryCredentialRef` or `storageCredentialRef` to the CR.
+CRs synced from OpenAPI do not automatically create or write back Kubernetes Secrets. Image registry, KS3, KPFS, Klog, and other credentials are not reverse-generated from OpenAPI. To modify a private image or KS3/KPFS mounts in the cluster later, create the corresponding Secrets in the same namespace and add `registryCredentialRef` or `storageCredentialRef` to the CR. NFS mounts do not require a Secret.
 
 ### 2.3 Sandbox instance sync
 
@@ -114,6 +115,7 @@ The following field mapping applies:
 | instance env | `status.env` |
 | instance KS3 mount | `status.ks3MountConfig` |
 | instance KPFS mount | `status.kpfsMountConfig` |
+| instance NFS mount | `status.nfsMountConfig` |
 | end time | `status.endTime` |
 
 Instance-level environment variables and mount configurations override template-level settings. After the timeout is modified through the console, the next sync updates both `spec.timeoutSeconds` and `status.timeoutSeconds`.
@@ -171,6 +173,7 @@ When you modify `SandboxTemplate.spec`, the validating webhook computes the diff
 | `spec.template.spec.skillConfig` | Skill configuration. |
 | `spec.template.spec.ks3MountConfig` | KS3 mount. |
 | `spec.template.spec.kpfsMountConfig` | KPFS mount. |
+| `spec.template.spec.nfsMountConfig` | NFS mount. Each mount point contains `server`, `remotePath`, `localMountPath`, `readOnly`, and optional `options`. The operator converts `remotePath` to OpenAPI `ExportPath`. |
 | `spec.template.spec.observability` | Logging configuration. |
 | `spec.template.spec.pool` | Private template preheat pool target size. `targetSize: 0` disables preheating and remains visible after OpenAPI sync. |
 
@@ -180,15 +183,83 @@ Example:
 kubectl edit stpl -n sandbox-demo full-template
 ```
 
-If you modify KS3/KPFS mounts:
+If you modify mount configuration:
 
 * To remove all KS3 mounts, delete `ks3MountConfig` or set `enabled: false`.
 * To remove all KPFS mounts, delete `kpfsMountConfig` or set `enabled: false`.
+* To remove all NFS mounts, delete `nfsMountConfig` or set `enabled: false`.
 * As long as the updated KS3 or KPFS mount remains enabled, `spec.template.spec.storageCredentialRef.name` must be configured and the referenced Secret must contain `accessKey` and `secretAccessKey`.
+* NFS does not require AK/SK or `storageCredentialRef`.
+
+### 3.3 NFS Mount Fields
+
+An NFS mount point has the following base fields:
+
+* `server`: NFS server address. It may be an IP address or a domain name resolvable from the sandbox runtime, such as `0010uerv1fp309ymwpt-inw99.cn-hangzhou.nas.aliyuncs.com`. Do not include a scheme or port.
+* `remotePath`: Remote directory exported by the NFS server; it must begin with `/`. The operator converts it to OpenAPI `ExportPath`.
+* `localMountPath`: Mount directory inside the sandbox instance; it must begin with `/`.
+* `readOnly`: Whether to mount read-only; defaults to `false`.
+* `options`: Optional advanced mount settings; omit it when no advanced configuration is needed.
+
+A domain name can be mounted only when DNS resolution and network connectivity are available from the sandbox runtime and the required NFS and mountd ports are reachable.
+
+#### Complete `options` reference
+
+`nfsMountConfig.mountPoints[].options` controls NFSv3 mount behavior. Field names are case-sensitive. Omitted fields are determined by the OpenAPI preset or runtime environment.
+
+| Field | Type | Required | Default | Supported values and description |
+| --- | --- | --- | --- | --- |
+| `version` | string | No | `"3"` | Only `"3"` (NFSv3) is currently supported. |
+| `protocol` | string | No | `"tcp"` | NFS data protocol; only `"tcp"` is currently supported. |
+| `mountProtocol` | string | No | `"tcp"` | mountd protocol; only `"tcp"` is currently supported. |
+| `nfsPort` | integer | No | `2049` | NFS server port, from 1 to 65535. Do not include the port in `server`. |
+| `mountdMode` | string | No | Preset-dependent | Supports `fixed` and `rpcbind`. |
+| `mountdPort` | integer | Conditional | - | Required for `mountdMode=fixed`, from 1 to 65535; must be omitted for `rpcbind`. |
+| `lockMode` | string | No | `"nolock"` | Only `"nolock"` is currently supported. |
+| `noresvport` | boolean | No | Usually `true` | `true` uses a non-privileged source port; `false` generates `resvport`. The `none` preset defaults to `false`. |
+| `rsize` | integer | No | Preset or system-dependent | NFS read block size, from 1024 to 16777216 bytes. |
+| `wsize` | integer | No | Preset or system-dependent | NFS write block size, from 1024 to 16777216 bytes. |
+| `retryMode` | string | No | `"hard"` | Supports `hard`, `soft`, and `softerr`; `hard` is generally recommended. |
+| `timeo` | integer | No | Preset or kernel-dependent | RPC timeout in tenths of a second, from 1 to 6000. For example, `600` is about 60 seconds. |
+| `retrans` | integer | No | Preset or kernel-dependent | RPC retransmission count, from 0 to 100. |
+| `acl` | boolean | No | Not explicitly set | `true` generates `acl`; `false` generates `noacl`. |
+| `security` | string | No | Not explicitly set | Only `"sys"` is currently supported and generates `sec=sys`. |
+| `nconnect` | integer | No | Not explicitly set | TCP connections per server, from 1 to 16; kernel support is also required. |
+| `lookupCache` | string | No | Not explicitly set | Supports `all`, `positive`, and `none`; controls directory-entry lookup caching. |
+| `actimeo` | integer | No | Not explicitly set | Sets file and directory attribute-cache time, from 0 to 86400 seconds. |
+| `acregmin` | integer | No | Not explicitly set | Minimum regular-file attribute-cache time, from 0 to 86400 seconds. |
+| `acregmax` | integer | No | Not explicitly set | Maximum regular-file attribute-cache time, from 0 to 86400 seconds; must not be less than `acregmin`. |
+| `acdirmin` | integer | No | Not explicitly set | Minimum directory attribute-cache time, from 0 to 86400 seconds. |
+| `acdirmax` | integer | No | Not explicitly set | Maximum directory attribute-cache time, from 0 to 86400 seconds; must not be less than `acdirmin`. |
+| `extraOptions` | string[] | No | Empty array | Additional allow-listed options, up to 32 items and 128 characters per item. |
+
+Example:
+
+```yaml
+options:
+  version: "3"
+  protocol: tcp
+  mountProtocol: tcp
+  nfsPort: 2049
+  mountdMode: rpcbind
+  lockMode: nolock
+  noresvport: true
+  rsize: 1048576
+  wsize: 1048576
+  retryMode: hard
+  timeo: 600
+  retrans: 2
+  security: sys
+  nconnect: 4
+  lookupCache: all
+  actimeo: 30
+  extraOptions:
+    - async
+```
 
 If you modify instance type, system disk, or data disks, configure them through `spec.template.spec.kecConfig.instanceSpecs`. Each item must set `instanceType`, `systemDisk.type`, and `systemDisk.size`. `dataDisks` currently accepts at most one data disk and does not require `snapshotID`. Direct `instanceType`, `systemDisk`, and `dataDisks` fields under `kecConfig` are no longer supported.
 
-### 3.3 Delete a template
+### 3.4 Delete a template
 
 ```bash
 kubectl delete stpl -n sandbox-demo full-template
@@ -201,7 +272,7 @@ Template deletion first checks whether OpenAPI allows deletion:
 
 When instances still reference the template, you generally need to delete the instances first and then delete the template.
 
-### 3.4 Create a sandbox instance
+### 3.5 Create a sandbox instance
 
 Prepare a `Sandbox`; full examples are in [CR examples](cr-examples.md#4-full-sandbox-example).
 
@@ -225,7 +296,7 @@ The reconciler then queries OpenAPI by instance ID and writes back the `status`.
 * `spec.templateRef.name` or `spec.templateRef.id`: creates an instance from an existing template.
 * `spec.template`: inline template. The operator first creates the template and then creates an instance from it.
 
-### 3.5 Update a sandbox instance
+### 3.6 Update a sandbox instance
 
 `Sandbox` currently supports updating only `spec.timeoutSeconds`:
 
@@ -237,9 +308,9 @@ kubectl patch sbx -n sandbox-demo full-sandbox --type=merge -p '{
 }'
 ```
 
-Updating `spec.name`, `spec.templateRef`, `spec.template`, `spec.env`, `spec.ks3MountConfig`, or `spec.kpfsMountConfig` is not supported. The sandbox name is based on `metadata.name`; `spec.name` should not be configured.
+Updating `spec.name`, `spec.templateRef`, `spec.template`, `spec.env`, `spec.ks3MountConfig`, `spec.kpfsMountConfig`, or `spec.nfsMountConfig` is not supported. The sandbox name is based on `metadata.name`; `spec.name` should not be configured.
 
-### 3.6 Delete a sandbox instance
+### 3.7 Delete a sandbox instance
 
 ```bash
 kubectl delete sbx -n sandbox-demo full-sandbox
@@ -247,7 +318,7 @@ kubectl delete sbx -n sandbox-demo full-sandbox
 
 After the CR is deleted, the reconciler calls OpenAPI to delete the real instance through a finalizer and then removes the finalizer.
 
-### 3.7 Create a SandboxClaim
+### 3.8 Create a SandboxClaim
 
 `SandboxClaim` is a one-shot batch creation declaration. Full examples are in [CR examples](cr-examples.md#6-full-sandboxclaim-example).
 
@@ -298,7 +369,7 @@ If you need to delete instances created by the Claim, delete the corresponding c
 | `status.imageUrl` | Instance image. |
 | `status.command` | Start command. |
 | `status.env` | Instance environment variables. |
-| `status.ks3MountConfig` / `status.kpfsMountConfig` | Instance mount configuration. |
+| `status.ks3MountConfig` / `status.kpfsMountConfig` / `status.nfsMountConfig` | Instance mount configuration. |
 | `status.endTime` | Instance end time. |
 | `status.conditions` | Sync result and exception information. |
 
@@ -356,7 +427,7 @@ Confirm that the business namespace contains the OpenAPI credential Secret and t
 
 ### Creating or updating mount configuration fails
 
-KS3/KPFS mounts require `storageCredentialRef` to point to a Secret in the same namespace. The Secret must contain `accessKey` and `secretAccessKey`.
+KS3/KPFS mounts require `storageCredentialRef` to point to a Secret in the same namespace. The Secret must contain `accessKey` and `secretAccessKey`. NFS does not require this credential; enabled NFS mounts require `server`, a `remotePath` beginning with `/`, and `localMountPath`. Each mount type supports at most five mount points.
 
 ### Updating Sandbox environment variables, mounts, or template reference is rejected
 

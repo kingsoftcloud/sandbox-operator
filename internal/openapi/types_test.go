@@ -33,7 +33,18 @@ func TestRequestJSONFieldsMatchOpenAPISource(t *testing.T) {
 		t.Fatalf("ListSandboxesRequest must include State, got %s", string(sandboxListBody))
 	}
 
-	startBody, err := json.Marshal(StartSandboxRequest{TemplateID: "tpl-1", Envs: []Env{{Key: "APP_ENV", Value: "prod"}}})
+	startBody, err := json.Marshal(StartSandboxRequest{
+		TemplateID: "tpl-1",
+		Envs:       []Env{{Key: "APP_ENV", Value: "prod"}},
+		NFSMountConfig: &NFSMountConfigRequest{
+			Enabled: true,
+			MountPoints: []MountPoint{{
+				Server:         "nfs.example.internal",
+				ExportPath:     "/exports/data",
+				LocalMountPath: "/mnt/nfs",
+			}},
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +54,11 @@ func TestRequestJSONFieldsMatchOpenAPISource(t *testing.T) {
 	if !jsonArrayFieldExists(startBody, "Envs") {
 		t.Fatalf("StartSandboxRequest must use Envs array, got %s", string(startBody))
 	}
+	var startPayload map[string]any
+	if err := json.Unmarshal(startBody, &startPayload); err != nil {
+		t.Fatal(err)
+	}
+	assertJSONBool(t, startPayload, "NfsMountConfig", "NfsEnable", true)
 
 	updateSandboxBody, err := json.Marshal(UpdateSandboxRequest{InstanceID: "ins-1", Timeout: 3600})
 	if err != nil {
@@ -93,6 +109,7 @@ func TestUpdateRequestKeepsExplicitDisableAndClearValues(t *testing.T) {
 			SkillConfig:     &SkillConfig{Enable: false, SpaceIDs: []string{}, EnablePublicSkill: false},
 			KS3MountConfig:  &KS3MountConfigRequest{Enabled: false, MountPoints: []MountPoint{}},
 			KPFSMountConfig: &KPFSMountConfigRequest{Enabled: false, MountPoints: []MountPoint{}},
+			NFSMountConfig:  &NFSMountConfigRequest{Enabled: false, MountPoints: []MountPoint{}},
 		},
 		Command: &emptyCommand,
 		Ports:   &emptyPorts,
@@ -115,6 +132,7 @@ func TestUpdateRequestKeepsExplicitDisableAndClearValues(t *testing.T) {
 	assertJSONBool(t, payload, "SkillConfig", "PublicSkillEnable", false)
 	assertJSONBool(t, payload, "Ks3MountConfig", "Ks3Enable", false)
 	assertJSONBool(t, payload, "KpfsMountConfig", "KpfsEnable", false)
+	assertJSONBool(t, payload, "NfsMountConfig", "NfsEnable", false)
 
 	for _, key := range []string{"Command", "Ports", "Envs"} {
 		if _, ok := payload[key]; !ok {
@@ -179,7 +197,8 @@ func TestSandboxSourceResponseShape(t *testing.T) {
 		"SdnsUrls":{"app":"https://sdns.example.com"},
 		"CustomConfiguration":{"ImageUrl":"hub.kce.ksyun.com/sandbox/aio:v1","Port":8000,"Command":"/entrypoint.sh"},
 		"Envs":[{"Key":"APP_ENV","Value":"prod"}],
-		"Ks3MountConfig":{"Ks3Enable":true,"Ks3MountPoints":[{"BucketName":"bucket-a","RemotePath":"/datasets","LocalMountPath":"/mnt/ks3","ReadOnly":true}]}
+		"Ks3MountConfig":{"Ks3Enable":true,"Ks3MountPoints":[{"BucketName":"bucket-a","RemotePath":"/datasets","LocalMountPath":"/mnt/ks3","ReadOnly":true}]},
+		"NfsMountConfig":{"NfsEnable":true,"NfsMountPoints":[{"Server":"nfs.example.internal","ExportPath":"/exports/data","LocalMountPath":"/mnt/nfs","ReadOnly":false,"Options":{"version":"3","retryMode":"hard"}}]}
 	}`)
 	if err := json.Unmarshal(raw, &sandbox); err != nil {
 		t.Fatal(err)
@@ -198,6 +217,13 @@ func TestSandboxSourceResponseShape(t *testing.T) {
 	}
 	if len(sandbox.Envs) != 1 || len(sandbox.KS3MountConfig.Points()) != 1 {
 		t.Fatalf("runtime detail decode failed: %#v", sandbox)
+	}
+	if sandbox.NFSMountConfig == nil || !sandbox.NFSMountConfig.EnableNFS || len(sandbox.NFSMountConfig.NFSMounts) != 1 {
+		t.Fatalf("NFS runtime detail decode failed: %#v", sandbox.NFSMountConfig)
+	}
+	nfsPoint := sandbox.NFSMountConfig.NFSMounts[0]
+	if nfsPoint.Server != "nfs.example.internal" || nfsPoint.ExportPath != "/exports/data" || nfsPoint.Options["version"] != "3" {
+		t.Fatalf("NFS mount point decode failed: %#v", nfsPoint)
 	}
 }
 

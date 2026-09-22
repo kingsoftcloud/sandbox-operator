@@ -46,6 +46,7 @@ func TemplateCreateRequest(in *sandboxv1.SandboxTemplate, runtime RuntimeCredent
 		PreheatConfig:    templatePreheat(spec),
 		KS3MountConfig:   ks3MountToOpenAPI(tpl.Ks3MountConfig),
 		KPFSMountConfig:  kpfsMountToOpenAPI(tpl.KpfsMountConfig),
+		NFSMountConfig:   nfsMountToOpenAPI(tpl.NfsMountConfig),
 		KlogConfig:       templateKlogToOpenAPI(spec),
 		SkillConfig:      templateSkillToOpenAPI(tpl),
 		InstanceQuota:    templatePoolInstanceQuota(spec),
@@ -171,6 +172,9 @@ func TemplateUpdateRequestFromDiff(in, old *sandboxv1.SandboxTemplate, runtime R
 		req.AccessKey = full.AccessKey
 		req.SecretAccessKey = full.SecretAccessKey
 	}
+	if !reflect.DeepEqual(inTpl.NfsMountConfig, oldTpl.NfsMountConfig) {
+		req.NFSMountConfig = nfsMountUpdateToOpenAPI(inTpl.NfsMountConfig)
+	}
 	if !reflect.DeepEqual(templateObservabilitySpec(inTpl), templateObservabilitySpec(oldTpl)) {
 		req.KlogConfig = full.KlogConfig
 	}
@@ -198,6 +202,7 @@ func SandboxStartRequest(in *sandboxv1.Sandbox, templateID string, runtime Runti
 		Envs:            envsToOpenAPI(spec.Env),
 		KS3MountConfig:  ks3MountToOpenAPI(spec.Ks3MountConfig),
 		KPFSMountConfig: kpfsMountToOpenAPI(spec.KpfsMountConfig),
+		NFSMountConfig:  nfsMountToOpenAPI(spec.NfsMountConfig),
 		AccessKey:       sandboxStorageAccessKey(runtime),
 		SecretAccessKey: sandboxStorageSecretAccessKey(runtime),
 	}
@@ -299,6 +304,7 @@ func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbo
 	obj.Status.Env = sandboxEnvFromOpenAPI(remote.Envs)
 	obj.Status.Ks3MountConfig = mountConfigFromOpenAPI("ks3", remote.KS3MountConfig)
 	obj.Status.KpfsMountConfig = mountConfigFromOpenAPI("kpfs", remote.KPFSMountConfig)
+	obj.Status.NfsMountConfig = mountConfigFromOpenAPI("nfs", remote.NFSMountConfig)
 	obj.Status.CustomConfiguration = nil
 	if remote.CustomConfiguration != nil {
 		obj.Status.ImageURL = remote.CustomConfiguration.ImageURL
@@ -685,6 +691,17 @@ func mountConfigFromOpenAPI(kind string, cfg *openapi.MountConfig) *sandboxv1.Mo
 				ReadOnly:       p.ReadOnly,
 			})
 		}
+	case "nfs":
+		enabled = cfg.EnableNFS
+		for _, p := range cfg.NFSMounts {
+			points = append(points, sandboxv1.MountPoint{
+				Server:         p.Server,
+				RemotePath:     p.ExportPath,
+				LocalMountPath: p.LocalMountPath,
+				ReadOnly:       p.ReadOnly,
+				Options:        copyAnyMap(p.Options),
+			})
+		}
 	}
 	if !enabled && len(points) == 0 {
 		return nil
@@ -751,6 +768,7 @@ func applyRuntimeSpecFromOpenAPI(obj *sandboxv1.SandboxTemplate, remote openapi.
 	tpl.SkillConfig = skillFromOpenAPI(remote.SkillConfig)
 	tpl.Ks3MountConfig = mountConfigFromOpenAPI("ks3", remote.KS3MountConfig)
 	tpl.KpfsMountConfig = mountConfigFromOpenAPI("kpfs", remote.KPFSMountConfig)
+	tpl.NfsMountConfig = mountConfigFromOpenAPI("nfs", remote.NFSMountConfig)
 	if remote.KlogConfig != nil {
 		tpl.Observability = &sandboxv1.ObservabilitySpec{
 			Logging: &sandboxv1.LoggingSpec{
@@ -1048,6 +1066,16 @@ func kpfsMountToOpenAPI(in *sandboxv1.MountConfig) *openapi.KPFSMountConfigReque
 	}
 }
 
+func nfsMountToOpenAPI(in *sandboxv1.MountConfig) *openapi.NFSMountConfigRequest {
+	if in == nil {
+		return nil
+	}
+	return &openapi.NFSMountConfigRequest{
+		Enabled:     in.Enabled,
+		MountPoints: nfsMountPointsToOpenAPI(in.MountPoints),
+	}
+}
+
 func ks3MountUpdateToOpenAPI(cfg *sandboxv1.MountConfig) *openapi.KS3MountConfigRequest {
 	if cfg == nil {
 		return &openapi.KS3MountConfigRequest{Enabled: false, MountPoints: []openapi.MountPoint{}}
@@ -1062,6 +1090,13 @@ func kpfsMountUpdateToOpenAPI(cfg *sandboxv1.MountConfig) *openapi.KPFSMountConf
 	return kpfsMountToOpenAPI(cfg)
 }
 
+func nfsMountUpdateToOpenAPI(cfg *sandboxv1.MountConfig) *openapi.NFSMountConfigRequest {
+	if cfg == nil {
+		return &openapi.NFSMountConfigRequest{Enabled: false, MountPoints: []openapi.MountPoint{}}
+	}
+	return nfsMountToOpenAPI(cfg)
+}
+
 func mountPointsToOpenAPI(in []sandboxv1.MountPoint) []openapi.MountPoint {
 	out := make([]openapi.MountPoint, 0, len(in))
 	for _, item := range in {
@@ -1072,6 +1107,31 @@ func mountPointsToOpenAPI(in []sandboxv1.MountPoint) []openapi.MountPoint {
 			LocalMountPath: item.LocalMountPath,
 			ReadOnly:       item.ReadOnly,
 		})
+	}
+	return out
+}
+
+func nfsMountPointsToOpenAPI(in []sandboxv1.MountPoint) []openapi.MountPoint {
+	out := make([]openapi.MountPoint, 0, len(in))
+	for _, item := range in {
+		out = append(out, openapi.MountPoint{
+			Server:         item.Server,
+			ExportPath:     item.RemotePath,
+			LocalMountPath: item.LocalMountPath,
+			ReadOnly:       item.ReadOnly,
+			Options:        copyAnyMap(item.Options),
+		})
+	}
+	return out
+}
+
+func copyAnyMap(in map[string]interface{}) map[string]interface{} {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, len(in))
+	for key, value := range in {
+		out[key] = value
 	}
 	return out
 }

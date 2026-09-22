@@ -22,6 +22,7 @@ type SandboxClaimSpec struct {
 	StorageCredentialRef *LocalObjectReference       `json:"storageCredentialRef,omitempty"`
 	Ks3MountConfig       *MountConfig                `json:"ks3MountConfig,omitempty"`
 	KpfsMountConfig      *MountConfig                `json:"kpfsMountConfig,omitempty"`
+	NfsMountConfig       *MountConfig                `json:"nfsMountConfig,omitempty"`
 }
 
 type SandboxClaimStatus struct {

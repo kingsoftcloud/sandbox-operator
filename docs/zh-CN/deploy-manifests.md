@@ -17,7 +17,7 @@
 make deploy
 ```
 
-该命令会按正确顺序应用这些资源，创建 webhook TLS Secret 并写入 webhook CA bundle。默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`，无需配置镜像拉取凭据。若使用自行构建的镜像，可在部署时覆盖：
+该命令会按正确顺序应用这些资源，创建 webhook TLS Secret 并写入 webhook CA bundle。默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260922`，无需配置镜像拉取凭据。若使用自行构建的镜像，可在部署时覆盖：
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
@@ -37,6 +37,8 @@ make undeploy NAMESPACE=sandbox-operator-custom
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0 IMAGE_PULL_SECRET=sandbox-operator-image-pull
 ```
+
+升级时无需先执行 `make undeploy`。拉取最新代码后，使用与安装时相同的 `NAMESPACE`、`OPENAPI_BASE_URL` 等参数重新执行 `make deploy` 即可；脚本会更新 CRD 和工作负载并滚动重启 Operator。
 
 卸载：
 

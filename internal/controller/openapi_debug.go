@@ -13,6 +13,7 @@ func sandboxOpenAPIDebugValues(remote openapi.Sandbox) []any {
 		"remoteEnvCount", len(remote.Envs),
 		"remoteHasKS3MountConfig", remote.KS3MountConfig != nil,
 		"remoteHasKPFSMountConfig", remote.KPFSMountConfig != nil,
+		"remoteHasNFSMountConfig", remote.NFSMountConfig != nil,
 	}
 }
 

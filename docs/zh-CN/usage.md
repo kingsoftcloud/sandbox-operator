@@ -71,6 +71,7 @@ kubectl get stpl -n sandbox-demo <template-name> -o yaml
 | 环境变量 | `spec.template.spec.env` |
 | KS3 挂载 | `spec.template.spec.ks3MountConfig` |
 | KPFS 挂载 | `spec.template.spec.kpfsMountConfig` |
+| NFS 挂载 | `spec.template.spec.nfsMountConfig` |
 | 网络 | `spec.template.spec.networkConfig` |
 | 技能配置 | `spec.template.spec.skillConfig` |
 | 日志配置 | `spec.template.spec.observability` |
@@ -81,7 +82,7 @@ kubectl get stpl -n sandbox-demo <template-name> -o yaml
 
 省略 `spec.template.spec.networkConfig` 或将其配置为 `{}` 时，Operator 调用 OpenAPI 会默认仅启用公网访问，并设置 `SharedInternetAccessEnable=true`。
 
-从 OpenAPI 同步回来的 CR 不会自动创建或回写 Kubernetes Secret。也就是说，镜像仓库、KS3、KPFS、Klog 等凭据不会从 OpenAPI 反向生成 Secret。如果后续要在集群内修改镜像或挂载相关字段，需要先在同命名空间创建相应 Secret，并在 CR 中补充 `registryCredentialRef` 或 `storageCredentialRef`。
+从 OpenAPI 同步回来的 CR 不会自动创建或回写 Kubernetes Secret。也就是说，镜像仓库、KS3、KPFS、Klog 等凭据不会从 OpenAPI 反向生成 Secret。如果后续要在集群内修改私有镜像或 KS3/KPFS 挂载，需要先在同命名空间创建相应 Secret，并在 CR 中补充 `registryCredentialRef` 或 `storageCredentialRef`。NFS 挂载不需要 Secret。
 
 ### 2.3 沙箱实例同步
 
@@ -114,6 +115,7 @@ kubectl get sbx -n sandbox-demo <sandbox-name> -o yaml
 | 实例环境变量 | `status.env` |
 | 实例 KS3 挂载 | `status.ks3MountConfig` |
 | 实例 KPFS 挂载 | `status.kpfsMountConfig` |
+| 实例 NFS 挂载 | `status.nfsMountConfig` |
 | 结束时间 | `status.endTime` |
 
 实例级环境变量和挂载配置会覆盖模板配置。控制台修改实例超时时间后，下一轮同步会更新 `spec.timeoutSeconds` 和 `status.timeoutSeconds`。
@@ -171,6 +173,7 @@ kubectl get stpl -n sandbox-demo full-template \
 | `spec.template.spec.skillConfig` | 技能配置。 |
 | `spec.template.spec.ks3MountConfig` | KS3 挂载。 |
 | `spec.template.spec.kpfsMountConfig` | KPFS 挂载。 |
+| `spec.template.spec.nfsMountConfig` | NFS 挂载。挂载点包含 `server`、`remotePath`、`localMountPath`、`readOnly` 和可选的 `options`。Operator 调用 OpenAPI 时会将 `remotePath` 转换为 `ExportPath`。 |
 | `spec.template.spec.observability` | 日志配置。 |
 | `spec.template.spec.pool` | Private 模板预热池目标大小。`targetSize: 0` 表示关闭预热，OpenAPI 同步后会保留该值。 |
 
@@ -180,15 +183,83 @@ kubectl get stpl -n sandbox-demo full-template \
 kubectl edit stpl -n sandbox-demo full-template
 ```
 
-如果修改 KS3/KPFS 挂载：
+如果修改挂载配置：
 
 - 删除全部 KS3 挂载时，可以删除 `ks3MountConfig` 或设置 `enabled: false`。
 - 删除全部 KPFS 挂载时，可以删除 `kpfsMountConfig` 或设置 `enabled: false`。
+- 删除全部 NFS 挂载时，可以删除 `nfsMountConfig` 或设置 `enabled: false`。
 - 只要更新后的 KS3 或 KPFS 仍为启用状态，就必须配置 `spec.template.spec.storageCredentialRef.name`，并确保该 Secret 存在 `accessKey` 和 `secretAccessKey`。
+- NFS 不需要 AK/SK，也不需要配置 `storageCredentialRef`。
+
+### 3.3 NFS 挂载参数
+
+NFS 挂载点的基础字段如下：
+
+- `server`：NFS 服务端地址，支持 IP 或能够在沙箱运行环境中解析的域名，例如 `0010uerv1fp309ymwpt-inw99.cn-hangzhou.nas.aliyuncs.com`。不要包含协议或端口。
+- `remotePath`：NFS 服务端导出的远端目录，必须以 `/` 开头。Operator 调用 OpenAPI 时会将其转换为 `ExportPath`。
+- `localMountPath`：沙箱实例内的挂载目录，必须以 `/` 开头。
+- `readOnly`：是否以只读方式挂载，默认为 `false`。
+- `options`：可选的高级挂载参数；不需要高级配置时直接省略。
+
+域名能否实际挂载取决于沙箱运行环境的 DNS 解析和网络连通性，还需要确保 NFS、mountd 等相关端口可访问。
+
+#### options 完整参数
+
+`nfsMountConfig.mountPoints[].options` 用于配置 NFSv3 挂载行为。字段名区分大小写；未填写的字段由 OpenAPI 预设或运行环境决定。
+
+| 字段 | 类型 | 必填 | 默认值 | 支持范围及说明 |
+| --- | --- | --- | --- | --- |
+| `version` | string | 否 | `"3"` | 当前只支持 `"3"`，即 NFSv3。 |
+| `protocol` | string | 否 | `"tcp"` | NFS 数据传输协议，当前只支持 `"tcp"`。 |
+| `mountProtocol` | string | 否 | `"tcp"` | mountd 协议，当前只支持 `"tcp"`。 |
+| `nfsPort` | integer | 否 | `2049` | NFS 服务端端口，范围 1～65535。端口不能写在 `server` 中。 |
+| `mountdMode` | string | 否 | 由预设决定 | 支持 `fixed`、`rpcbind`。 |
+| `mountdPort` | integer | 条件必填 | - | `mountdMode=fixed` 时必须提供，范围 1～65535；`rpcbind` 时必须省略。 |
+| `lockMode` | string | 否 | `"nolock"` | 当前只支持 `"nolock"`。 |
+| `noresvport` | boolean | 否 | 通常为 `true` | `true` 使用非保留源端口；`false` 生成 `resvport`。`none` 预设默认是 `false`。 |
+| `rsize` | integer | 否 | 由预设或系统决定 | NFS 单次读取块大小，范围 1024～16777216 字节。 |
+| `wsize` | integer | 否 | 由预设或系统决定 | NFS 单次写入块大小，范围 1024～16777216 字节。 |
+| `retryMode` | string | 否 | `"hard"` | 支持 `hard`、`soft`、`softerr`，通常推荐 `hard`。 |
+| `timeo` | integer | 否 | 由预设或内核决定 | RPC 超时参数，单位为 0.1 秒，范围 1～6000。例如 `600` 表示约 60 秒。 |
+| `retrans` | integer | 否 | 由预设或内核决定 | RPC 重传次数，范围 0～100。 |
+| `acl` | boolean | 否 | 不显式设置 | `true` 生成 `acl`，`false` 生成 `noacl`。 |
+| `security` | string | 否 | 不显式设置 | 当前只支持 `"sys"`，最终生成 `sec=sys`。 |
+| `nconnect` | integer | 否 | 不显式设置 | 每个服务端建立的 TCP 连接数，范围 1～16；还需要运行环境内核支持。 |
+| `lookupCache` | string | 否 | 不显式设置 | 支持 `all`、`positive`、`none`，控制目录项查询缓存策略。 |
+| `actimeo` | integer | 否 | 不显式设置 | 同时设置文件和目录属性缓存时间，范围 0～86400 秒。 |
+| `acregmin` | integer | 否 | 不显式设置 | 普通文件属性缓存最短时间，范围 0～86400 秒。 |
+| `acregmax` | integer | 否 | 不显式设置 | 普通文件属性缓存最长时间，范围 0～86400 秒，不能小于 `acregmin`。 |
+| `acdirmin` | integer | 否 | 不显式设置 | 目录属性缓存最短时间，范围 0～86400 秒。 |
+| `acdirmax` | integer | 否 | 不显式设置 | 目录属性缓存最长时间，范围 0～86400 秒，不能小于 `acdirmin`。 |
+| `extraOptions` | string[] | 否 | 空数组 | 额外安全白名单选项，最多 32 项，每项最长 128 个字符。 |
+
+示例：
+
+```yaml
+options:
+  version: "3"
+  protocol: tcp
+  mountProtocol: tcp
+  nfsPort: 2049
+  mountdMode: rpcbind
+  lockMode: nolock
+  noresvport: true
+  rsize: 1048576
+  wsize: 1048576
+  retryMode: hard
+  timeo: 600
+  retrans: 2
+  security: sys
+  nconnect: 4
+  lookupCache: all
+  actimeo: 30
+  extraOptions:
+    - async
+```
 
 如果修改机型、系统盘或数据盘，需要通过 `spec.template.spec.kecConfig.instanceSpecs` 配置。每个条目都需要填写 `instanceType`、`systemDisk.type`、`systemDisk.size`。`dataDisks` 当前最多包含 1 个数据盘，且不需要指定 `snapshotID`。`kecConfig` 下不再支持直接配置 `instanceType`、`systemDisk`、`dataDisks`。
 
-### 3.3 删除模板
+### 3.4 删除模板
 
 ```bash
 kubectl delete stpl -n sandbox-demo full-template
@@ -201,7 +272,7 @@ kubectl delete stpl -n sandbox-demo full-template
 
 模板下仍有关联实例时，一般需要先删除实例，再删除模板。
 
-### 3.4 创建沙箱实例
+### 3.5 创建沙箱实例
 
 准备 `Sandbox`，完整示例见 [CR 示例](cr-examples.md#4-sandbox-完整示例)。
 
@@ -225,7 +296,7 @@ kubectl get sbx -n sandbox-demo full-sandbox -o yaml
 - `spec.templateRef.name` 或 `spec.templateRef.id`：基于已有模板创建实例。
 - `spec.template`：内联模板。operator 会先创建模板，再基于该模板创建实例。
 
-### 3.5 更新沙箱实例
+### 3.6 更新沙箱实例
 
 当前 `Sandbox` 只支持更新 `spec.timeoutSeconds`：
 
@@ -237,9 +308,9 @@ kubectl patch sbx -n sandbox-demo full-sandbox --type=merge -p '{
 }'
 ```
 
-不支持更新 `spec.name`、`spec.templateRef`、`spec.template`、`spec.env`、`spec.ks3MountConfig`、`spec.kpfsMountConfig` 等字段。沙箱名称以 `metadata.name` 为准，`spec.name` 不应配置。
+不支持更新 `spec.name`、`spec.templateRef`、`spec.template`、`spec.env`、`spec.ks3MountConfig`、`spec.kpfsMountConfig`、`spec.nfsMountConfig` 等字段。沙箱名称以 `metadata.name` 为准，`spec.name` 不应配置。
 
-### 3.6 删除沙箱实例
+### 3.7 删除沙箱实例
 
 ```bash
 kubectl delete sbx -n sandbox-demo full-sandbox
@@ -247,7 +318,7 @@ kubectl delete sbx -n sandbox-demo full-sandbox
 
 CR 删除后，reconciler 会通过 finalizer 调用 OpenAPI 删除真实实例，然后移除 finalizer。
 
-### 3.7 创建 SandboxClaim
+### 3.8 创建 SandboxClaim
 
 `SandboxClaim` 是一次性批量创建声明。完整示例见 [CR 示例](cr-examples.md#6-sandboxclaim-完整示例)。
 
@@ -298,7 +369,7 @@ kubectl delete sbxc -n sandbox-demo full-claim
 | `status.imageUrl` | 实例镜像。 |
 | `status.command` | 启动命令。 |
 | `status.env` | 实例环境变量。 |
-| `status.ks3MountConfig` / `status.kpfsMountConfig` | 实例挂载配置。 |
+| `status.ks3MountConfig` / `status.kpfsMountConfig` / `status.nfsMountConfig` | 实例挂载配置。 |
 | `status.endTime` | 实例结束时间。 |
 | `status.conditions` | 同步结果和异常信息。 |
 
@@ -356,7 +427,7 @@ kubectl get sbx -n sandbox-demo full-sandbox \
 
 ### 创建或更新挂载配置失败
 
-KS3/KPFS 挂载需要 `storageCredentialRef` 指向同命名空间 Secret。Secret 必须包含 `accessKey` 和 `secretAccessKey`。
+KS3/KPFS 挂载需要 `storageCredentialRef` 指向同命名空间 Secret。Secret 必须包含 `accessKey` 和 `secretAccessKey`。NFS 不需要该凭据；启用 NFS 时必须填写 `server`、以 `/` 开头的 `remotePath` 和 `localMountPath`，每类挂载最多 5 个挂载点。
 
 ### 修改 Sandbox 环境变量、挂载或模板引用被拒绝
 

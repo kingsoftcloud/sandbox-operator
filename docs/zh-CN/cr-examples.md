@@ -32,6 +32,7 @@ stringData:
 ### 1.2 KS3/KPFS 挂载凭据
 
 模板或实例配置 `ks3MountConfig`、`kpfsMountConfig` 时，需要通过 `storageCredentialRef` 引用该 Secret。
+NFS 挂载不需要 AK/SK，因此不需要引用该 Secret。
 
 ```yaml
 apiVersion: v1
@@ -83,7 +84,7 @@ stringData:
 
 ## 2. SandboxTemplate 完整示例
 
-该示例覆盖模板创建和更新中常用字段。`spec.template.spec.env` 使用 `name/value`，与 Kubernetes Pod EnvVar 风格一致。
+该示例覆盖模板创建和更新中常用字段。`spec.template.spec.env` 使用 `name/value`，与 Kubernetes Pod EnvVar 风格一致。NFS 挂载的高级 `options` 字段单独说明，参见[使用说明：options 完整参数](usage.md#options-完整参数)。
 
 ```yaml
 apiVersion: sandbox.kce.ksyun.com/v1alpha1
@@ -179,7 +180,7 @@ spec:
         - name: TEST_KEY
           value: ghw
 
-      # KS3/KPFS 挂载凭据。只要启用挂载，就需要引用同命名空间 Secret。
+      # KS3/KPFS 挂载凭据。只要启用 KS3 或 KPFS，就需要引用同命名空间 Secret。
       storageCredentialRef:
         name: storage-credential
 
@@ -200,6 +201,15 @@ spec:
             remotePath: /
             localMountPath: /mnt1
             readOnly: true
+
+      # NFS 挂载，不需要 storageCredentialRef。删除挂载时可以删除该字段，或设置 enabled: false。
+      nfsMountConfig:
+        enabled: true
+        mountPoints:
+          - server: 10.0.0.10
+            remotePath: /exports/data
+            localMountPath: /mnt/nfs
+            readOnly: false
 
       # 网络配置。
       # 省略 networkConfig 或配置为 {} 时，Operator 默认只启用公网访问。
@@ -331,6 +341,15 @@ spec:
         remotePath: /
         localMountPath: /mnt-new1
         readOnly: true
+
+  # 实例级 NFS 挂载，会覆盖模板中的 NFS 挂载，不需要 storageCredentialRef。
+  nfsMountConfig:
+    enabled: true
+    mountPoints:
+      - server: 10.0.0.10
+        remotePath: /exports/runtime
+        localMountPath: /mnt/nfs
+        readOnly: false
 ```
 
 创建后，operator 会补充平台实例 ID、模板 ID、endpoint、token 等注解，并回写状态：
@@ -366,6 +385,13 @@ status:
         remotePath: /
         localMountPath: /mnt-new1
         readOnly: true
+  nfsMountConfig:
+    enabled: true
+    mountPoints:
+      - server: 10.0.0.10
+        remotePath: /exports/runtime
+        localMountPath: /mnt/nfs
+        readOnly: false
 ```
 
 ## 5. Inline Template Sandbox 示例
@@ -455,6 +481,14 @@ spec:
             localMountPath: /mnt2
             readOnly: true
 
+      nfsMountConfig:
+        enabled: true
+        mountPoints:
+          - server: 10.0.0.10
+            remotePath: /exports/template
+            localMountPath: /mnt/nfs-template
+            readOnly: true
+
       networkConfig:
         # 省略 networkConfig 或配置为 {} 时，Operator 默认只启用公网访问。
         enablePublic: true
@@ -496,6 +530,14 @@ spec:
         remotePath: /
         localMountPath: /mnt-new2
         readOnly: true
+
+  nfsMountConfig:
+    enabled: true
+    mountPoints:
+      - server: 10.0.0.10
+        remotePath: /exports/runtime
+        localMountPath: /mnt/nfs
+        readOnly: false
 ```
 
 ## 6. SandboxClaim 完整示例
@@ -530,7 +572,7 @@ spec:
     - key: RUNTIME_ENV
       value: claim
 
-  # 每个实例的挂载凭据。
+  # 每个实例的 KS3/KPFS 挂载凭据。
   storageCredentialRef:
     name: storage-credential
 
@@ -551,6 +593,15 @@ spec:
         remotePath: /
         localMountPath: /mnt-new1
         readOnly: true
+
+  # 每个实例的 NFS 挂载，不需要挂载凭据。
+  nfsMountConfig:
+    enabled: true
+    mountPoints:
+      - server: 10.0.0.10
+        remotePath: /exports/claim
+        localMountPath: /mnt/nfs
+        readOnly: false
 ```
 
 创建后，Claim 会进入 `Pending`、`Running`、`Successful` 或 `Failed` 等状态，并记录子实例：

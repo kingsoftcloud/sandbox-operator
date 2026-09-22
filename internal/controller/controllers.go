@@ -501,6 +501,7 @@ func (r *SandboxClaimReconciler) ensureClaimSandboxes(ctx context.Context, claim
 				StorageCredentialRef: claim.Spec.StorageCredentialRef,
 				Ks3MountConfig:       claim.Spec.Ks3MountConfig,
 				KpfsMountConfig:      claim.Spec.KpfsMountConfig,
+				NfsMountConfig:       claim.Spec.NfsMountConfig,
 			},
 		}
 		if templateID != "" {

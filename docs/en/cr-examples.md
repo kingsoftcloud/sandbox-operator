@@ -32,6 +32,7 @@ stringData:
 ### 1.2 KS3/KPFS mount credentials
 
 When `ks3MountConfig` or `kpfsMountConfig` is configured in a template or instance, reference this Secret through `storageCredentialRef`.
+NFS mounts do not use AK/SK and do not require this Secret.
 
 ```yaml
 apiVersion: v1
@@ -83,7 +84,7 @@ stringData:
 
 ## 2. Full SandboxTemplate Example
 
-This example covers the commonly used fields when creating or updating a template. `spec.template.spec.env` uses `name`/`value` in the Kubernetes Pod EnvVar style.
+This example covers the commonly used fields when creating or updating a template. `spec.template.spec.env` uses `name`/`value` in the Kubernetes Pod EnvVar style. Advanced NFS `options` are documented separately in the [complete options reference](usage.md#complete-options-reference).
 
 ```yaml
 apiVersion: sandbox.kce.ksyun.com/v1alpha1
@@ -180,7 +181,7 @@ spec:
         - name: TEST_KEY
           value: ghw
 
-      # KS3/KPFS mount credential. Required whenever any mount is enabled.
+      # KS3/KPFS mount credential. Required whenever KS3 or KPFS is enabled.
       storageCredentialRef:
         name: storage-credential
 
@@ -201,6 +202,15 @@ spec:
             remotePath: /
             localMountPath: /mnt1
             readOnly: true
+
+      # NFS mount. It does not require storageCredentialRef. Delete this field or set enabled: false to remove it.
+      nfsMountConfig:
+        enabled: true
+        mountPoints:
+          - server: 10.0.0.10
+            remotePath: /exports/data
+            localMountPath: /mnt/nfs
+            readOnly: false
 
       # Network configuration.
       # When networkConfig is omitted or set to {}, the operator enables public access only.
@@ -332,6 +342,15 @@ spec:
         remotePath: /
         localMountPath: /mnt-new1
         readOnly: true
+
+  # Instance-level NFS mount; overrides the template NFS mount and requires no storageCredentialRef.
+  nfsMountConfig:
+    enabled: true
+    mountPoints:
+      - server: 10.0.0.10
+        remotePath: /exports/runtime
+        localMountPath: /mnt/nfs
+        readOnly: false
 ```
 
 After creation, the operator adds platform annotations for instance ID, template ID, endpoint, and token, and writes back the status:
@@ -367,6 +386,13 @@ status:
         remotePath: /
         localMountPath: /mnt-new1
         readOnly: true
+  nfsMountConfig:
+    enabled: true
+    mountPoints:
+      - server: 10.0.0.10
+        remotePath: /exports/runtime
+        localMountPath: /mnt/nfs
+        readOnly: false
 ```
 
 ## 5. Inline Template Sandbox Example
@@ -456,6 +482,14 @@ spec:
             localMountPath: /mnt2
             readOnly: true
 
+      nfsMountConfig:
+        enabled: true
+        mountPoints:
+          - server: 10.0.0.10
+            remotePath: /exports/template
+            localMountPath: /mnt/nfs-template
+            readOnly: true
+
       networkConfig:
         # When networkConfig is omitted or set to {}, the operator enables public access only.
         enablePublic: true
@@ -497,6 +531,14 @@ spec:
         remotePath: /
         localMountPath: /mnt-new2
         readOnly: true
+
+  nfsMountConfig:
+    enabled: true
+    mountPoints:
+      - server: 10.0.0.10
+        remotePath: /exports/runtime
+        localMountPath: /mnt/nfs
+        readOnly: false
 ```
 
 ## 6. Full SandboxClaim Example
@@ -531,7 +573,7 @@ spec:
     - key: RUNTIME_ENV
       value: claim
 
-  # Mount credential for each instance.
+  # KS3/KPFS mount credential for each instance.
   storageCredentialRef:
     name: storage-credential
 
@@ -552,6 +594,15 @@ spec:
         remotePath: /
         localMountPath: /mnt-new1
         readOnly: true
+
+  # NFS mount for each instance; no mount credential is required.
+  nfsMountConfig:
+    enabled: true
+    mountPoints:
+      - server: 10.0.0.10
+        remotePath: /exports/claim
+        localMountPath: /mnt/nfs
+        readOnly: false
 ```
 
 After creation, the Claim transitions through phases such as `Pending`, `Running`, `Successful`, or `Failed`, and records its child instances:

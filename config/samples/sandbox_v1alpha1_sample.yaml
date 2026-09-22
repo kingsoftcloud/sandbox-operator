@@ -81,6 +81,13 @@ spec:
             remotePath: /
             localMountPath: /mnt/kpfs/kcitest1
             readOnly: false
+      nfsMountConfig:
+        enabled: true
+        mountPoints:
+          - server: 10.0.0.10
+            remotePath: /exports/data
+            localMountPath: /mnt/nfs
+            readOnly: false
       networkConfig:
         enablePublic: true
         enablePrivate: true

@@ -3,4 +3,4 @@ name: sandbox-operator
 description: Sandbox Operator for SandboxTemplate, Sandbox, and SandboxClaim resources.
 type: application
 version: 0.1.3
-appVersion: "v20260705"
+appVersion: "v20260922"

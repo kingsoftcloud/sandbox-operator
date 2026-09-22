@@ -25,6 +25,7 @@ type Template struct {
 	Envs                         []Env                `json:"Envs,omitempty"`
 	KS3MountConfig               *MountConfig         `json:"Ks3MountConfig,omitempty"`
 	KPFSMountConfig              *MountConfig         `json:"KpfsMountConfig,omitempty"`
+	NFSMountConfig               *MountConfig         `json:"NfsMountConfig,omitempty"`
 	Command                      string               `json:"Command,omitempty"`
 	Ports                        []int                `json:"Ports,omitempty"`
 	KecConfig                    *KecConfig           `json:"KecConfig,omitempty"`
@@ -101,6 +102,7 @@ type Sandbox struct {
 	Envs                []Env                `json:"Envs,omitempty"`
 	KS3MountConfig      *MountConfig         `json:"Ks3MountConfig,omitempty"`
 	KPFSMountConfig     *MountConfig         `json:"KpfsMountConfig,omitempty"`
+	NFSMountConfig      *MountConfig         `json:"NfsMountConfig,omitempty"`
 	KlogConfig          *KlogConfig          `json:"KlogConfig,omitempty"`
 	EnvdAccessToken     string               `json:"Token,omitempty"`
 }
@@ -138,14 +140,15 @@ type VPCConfig struct {
 type MountConfig struct {
 	EnableKS3   bool         `json:"Ks3Enable,omitempty"`
 	EnableKPFS  bool         `json:"KpfsEnable,omitempty"`
+	EnableNFS   bool         `json:"NfsEnable,omitempty"`
 	MountPoints []MountPoint `json:"Ks3MountPoints,omitempty"`
 	KPFSMounts  []MountPoint `json:"KpfsMountPoints,omitempty"`
+	NFSMounts   []MountPoint `json:"NfsMountPoints,omitempty"`
 	ReadOnly    bool         `json:"ReadOnly,omitempty"`
 }
 
-// KS3MountConfigRequest and KPFSMountConfigRequest are request-only models.
-// Keeping them separate preserves an explicit false for the relevant enable
-// flag without sending fields belonging to the other storage backend.
+// The backend-specific mount request models preserve explicit false values
+// without sending fields that belong to another storage backend.
 type KS3MountConfigRequest struct {
 	Enabled     bool         `json:"Ks3Enable"`
 	MountPoints []MountPoint `json:"Ks3MountPoints"`
@@ -156,6 +159,11 @@ type KPFSMountConfigRequest struct {
 	MountPoints []MountPoint `json:"KpfsMountPoints"`
 }
 
+type NFSMountConfigRequest struct {
+	Enabled     bool         `json:"NfsEnable"`
+	MountPoints []MountPoint `json:"NfsMountPoints"`
+}
+
 func (m *MountConfig) Points() []MountPoint {
 	if m == nil {
 		return nil
@@ -163,16 +171,22 @@ func (m *MountConfig) Points() []MountPoint {
 	if len(m.MountPoints) > 0 {
 		return m.MountPoints
 	}
-	return m.KPFSMounts
+	if len(m.KPFSMounts) > 0 {
+		return m.KPFSMounts
+	}
+	return m.NFSMounts
 }
 
 type MountPoint struct {
-	BucketName     string `json:"BucketName,omitempty"`
-	FileSystemName string `json:"FileSystemName,omitempty"`
-	RemotePath     string `json:"RemotePath,omitempty"`
-	LocalMountPath string `json:"LocalMountPath,omitempty"`
-	ReadOnly       bool   `json:"ReadOnly"`
-	Token          string `json:"-"`
+	BucketName     string                 `json:"BucketName,omitempty"`
+	FileSystemName string                 `json:"FileSystemName,omitempty"`
+	Server         string                 `json:"Server,omitempty"`
+	ExportPath     string                 `json:"ExportPath,omitempty"`
+	RemotePath     string                 `json:"RemotePath,omitempty"`
+	LocalMountPath string                 `json:"LocalMountPath,omitempty"`
+	ReadOnly       bool                   `json:"ReadOnly"`
+	Options        map[string]interface{} `json:"Options,omitempty"`
+	Token          string                 `json:"-"`
 }
 
 type CustomConfiguration struct {
@@ -266,6 +280,7 @@ type CreateTemplateRequest struct {
 	KlogConfig       *KlogConfig             `json:"KlogConfig,omitempty"`
 	KPFSMountConfig  *KPFSMountConfigRequest `json:"KpfsMountConfig,omitempty"`
 	KS3MountConfig   *KS3MountConfigRequest  `json:"Ks3MountConfig,omitempty"`
+	NFSMountConfig   *NFSMountConfigRequest  `json:"NfsMountConfig,omitempty"`
 	AccessKey        string                  `json:"AccessKey,omitempty"`
 	SecretAccessKey  string                  `json:"SecretAccessKey,omitempty"`
 	PreheatConfig    *PreheatConfig          `json:"PreheatConfig,omitempty"`
@@ -298,6 +313,7 @@ type StartSandboxRequest struct {
 	Timeout         int                     `json:"Timeout,omitempty"`
 	KS3MountConfig  *KS3MountConfigRequest  `json:"Ks3MountConfig,omitempty"`
 	KPFSMountConfig *KPFSMountConfigRequest `json:"KpfsMountConfig,omitempty"`
+	NFSMountConfig  *NFSMountConfigRequest  `json:"NfsMountConfig,omitempty"`
 	AccessKey       string                  `json:"AccessKey,omitempty"`
 	SecretAccessKey string                  `json:"SecretAccessKey,omitempty"`
 	Envs            []Env                   `json:"Envs,omitempty"`

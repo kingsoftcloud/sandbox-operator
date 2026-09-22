@@ -55,7 +55,7 @@ helm upgrade --install sandbox-operator charts/sandbox-operator \
 make deploy
 ```
 
-两种方式默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`，无需镜像拉取凭据。自建镜像和私有仓库配置见 [部署说明](docs/zh-CN/deployment.md)。
+两种方式默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260922`，无需镜像拉取凭据。自建镜像和私有仓库配置见 [部署说明](docs/zh-CN/deployment.md)。
 
 常用部署参数：
 

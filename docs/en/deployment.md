@@ -1,6 +1,6 @@
 # Deploy Sandbox Operator
 
-The default public image is `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260814`; no registry credential is required.
+The default public image is `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260922`; no registry credential is required.
 
 ## Quick Install
 
@@ -180,7 +180,36 @@ For Helm, add `--set imagePullSecrets[0].name=sandbox-operator-image-pull`.
 
 ## Upgrade and Uninstall
 
-Repeat the install command to upgrade. To remove the operator:
+Do not run `make undeploy` or `helm uninstall` before an upgrade. Uninstalling causes an avoidable service interruption, and raw-manifest uninstall also removes configuration and webhook certificates from the Operator namespace.
+
+For a raw-manifest installation, pull the latest source and repeat the deployment command. `make deploy` updates the CRDs, ConfigMap, RBAC, Deployment, and webhooks, switches to the default `v20260922` image, and rolls the Operator:
+
+```bash
+git pull
+make deploy
+```
+
+If the original installation used a custom namespace, internal OpenAPI endpoint, or other options, pass the same values during the upgrade, for example:
+
+```bash
+make deploy \
+  NAMESPACE=sandbox-operator-custom \
+  OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
+```
+
+For a Helm installation, explicitly update the CRDs before reusing the install command. Helm does not automatically update CRDs from a chart's `crds/` directory during `helm upgrade`, so the first command is required for the new NFS fields:
+
+```bash
+git pull
+kubectl apply -f config/crd/bases.yaml
+helm upgrade --install sandbox-operator charts/sandbox-operator \
+  -n sandbox-operator-system \
+  --create-namespace
+```
+
+If the existing release uses a custom namespace or `--set` values, pass the same values during the upgrade.
+
+Run an uninstall command only when you intend to remove the Operator:
 
 ```bash
 # Helm
