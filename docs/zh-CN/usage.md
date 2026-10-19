@@ -108,6 +108,7 @@ kubectl get sbx -n sandbox-demo <sandbox-name> -o yaml
 | 模板 ID | `metadata.annotations["sandbox.kce.ksyun.com/template-id"]`、`spec.templateRef.id` |
 | 超时时间 | `spec.timeoutSeconds`、`status.timeoutSeconds` |
 | 实例状态 | `status.phase` |
+| 实例失败原因 | `status.failure.code`、`status.failure.message` |
 | 访问地址 | `status.endpoint`、`status.urls`、`status.accessUrl` |
 | token | `status.token` |
 | 镜像 | `status.imageUrl` |
@@ -119,6 +120,25 @@ kubectl get sbx -n sandbox-demo <sandbox-name> -o yaml
 | 结束时间 | `status.endTime` |
 
 实例级环境变量和挂载配置会覆盖模板配置。控制台修改实例超时时间后，下一轮同步会更新 `spec.timeoutSeconds` 和 `status.timeoutSeconds`。
+
+实例已经被 OpenAPI 接受创建，但后续异步创建失败时，OpenAPI 的实例详情和实例列表响应会返回结构化的 `failure.code` 与 `failure.message`。Operator 会将其同步为：
+
+```yaml
+status:
+  phase: Failed
+  failure:
+    code: NoStack
+    message: 底层资源不足
+```
+
+当前仅支持以下两种结构化错误码：
+
+| 错误码 | 含义 |
+| --- | --- |
+| `NoStack` | 底层资源不足，例如机器售罄、EBS 云盘售罄等。 |
+| `CreateTimeout` | 实例创建超时的通用兜底错误。当前挂载失败等经过底层重试后也会归入该错误；后续将继续细分挂载失败、镜像拉取失败等错误码。 |
+
+`status.failure` 只表示平台实例已受理后的异步创建或运行失败。配额不足等由 `StartSandboxInstance` 同步返回的错误会直接拒绝 CR 创建，不会写入 `status.failure`。OpenAPI 调用或 Kubernetes 同步失败仍通过 `status.conditions` 和 Operator 日志表示。实例详情响应不再包含 `failure` 时，Operator 会清除已有的 `status.failure`。
 
 ### 2.4 OpenAPI 删除或回收资源
 
@@ -291,6 +311,12 @@ kubectl get sbx -n sandbox-demo full-sandbox -o yaml
 
 随后 reconciler 会根据实例 ID 查询 OpenAPI，并回写 `status`。
 
+如果模板实例配额不足，OpenAPI 会在 admission 阶段拒绝 `StartSandboxInstance`。此时 `kubectl apply` 直接报错，Sandbox CR 不会创建，也不会先创建 CR 再在 `status.failure` 中记录错误。例如：
+
+```text
+Error from server (Forbidden): error when creating "sbx.yaml": admission webhook "msandbox.sandbox.kce.ksyun.com" denied the request: openapi StartSandboxInstance failed: http 400 requestId=sandbox-operator-1792392147311118224: 当前模板下的沙箱实例数量已达到配额限制
+```
+
 `Sandbox` 支持两种创建方式：
 
 - `spec.templateRef.name` 或 `spec.templateRef.id`：基于已有模板创建实例。
@@ -362,6 +388,8 @@ kubectl delete sbxc -n sandbox-demo full-claim
 | `metadata.annotations["sandbox.kce.ksyun.com/sandbox-id"]` | 平台实例 ID。 |
 | `metadata.annotations["sandbox.kce.ksyun.com/template-id"]` | 平台模板 ID。 |
 | `status.phase` | 实例状态。 |
+| `status.failure.code` | OpenAPI 返回的结构化实例失败错误码。仅失败时存在。 |
+| `status.failure.message` | OpenAPI 返回的实例失败错误信息。仅失败时存在。 |
 | `status.timeoutSeconds` | 实例超时时间。 |
 | `status.endpoint` | 实例入口。 |
 | `status.urls` / `status.accessUrl` | 访问地址。 |

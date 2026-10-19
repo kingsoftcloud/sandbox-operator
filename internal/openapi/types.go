@@ -104,7 +104,13 @@ type Sandbox struct {
 	KPFSMountConfig     *MountConfig         `json:"KpfsMountConfig,omitempty"`
 	NFSMountConfig      *MountConfig         `json:"NfsMountConfig,omitempty"`
 	KlogConfig          *KlogConfig          `json:"KlogConfig,omitempty"`
+	Failure             *SandboxFailure      `json:"failure,omitempty"`
 	EnvdAccessToken     string               `json:"Token,omitempty"`
+}
+
+type SandboxFailure struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 func (s Sandbox) Identifier() string {

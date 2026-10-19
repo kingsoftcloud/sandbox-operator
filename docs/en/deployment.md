@@ -1,6 +1,6 @@
 # Deploy Sandbox Operator
 
-The default public image is `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20260922`; no registry credential is required.
+The default public image is `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019`; no registry credential is required.
 
 ## Quick Install
 
@@ -182,7 +182,7 @@ For Helm, add `--set imagePullSecrets[0].name=sandbox-operator-image-pull`.
 
 Do not run `make undeploy` or `helm uninstall` before an upgrade. Uninstalling causes an avoidable service interruption, and raw-manifest uninstall also removes configuration and webhook certificates from the Operator namespace.
 
-For a raw-manifest installation, pull the latest source and repeat the deployment command. `make deploy` updates the CRDs, ConfigMap, RBAC, Deployment, and webhooks, switches to the default `v20260922` image, and rolls the Operator:
+For a raw-manifest installation, pull the latest source and repeat the deployment command. `make deploy` updates the CRDs, ConfigMap, RBAC, Deployment, and webhooks, switches to the default `v20261019` image, and rolls the Operator:
 
 ```bash
 git pull

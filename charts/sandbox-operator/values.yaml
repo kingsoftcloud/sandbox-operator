@@ -5,7 +5,7 @@ createNamespace: false
 
 image:
   repository: "hub.kce.ksyun.com/ksyun-public/sandbox-operator"
-  tag: "v20260922"
+  tag: "v20261019"
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []

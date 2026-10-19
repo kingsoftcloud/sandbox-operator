@@ -305,6 +305,7 @@ func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbo
 	obj.Status.Ks3MountConfig = mountConfigFromOpenAPI("ks3", remote.KS3MountConfig)
 	obj.Status.KpfsMountConfig = mountConfigFromOpenAPI("kpfs", remote.KPFSMountConfig)
 	obj.Status.NfsMountConfig = mountConfigFromOpenAPI("nfs", remote.NFSMountConfig)
+	obj.Status.Failure = sandboxFailureFromOpenAPI(remote.Failure)
 	obj.Status.CustomConfiguration = nil
 	if remote.CustomConfiguration != nil {
 		obj.Status.ImageURL = remote.CustomConfiguration.ImageURL
@@ -317,10 +318,20 @@ func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbo
 	}
 }
 
-func ApplySandboxAccessURLFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
+func ApplySandboxListStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
 	if accessURL := sandboxURLsFromOpenAPIURL(remote.AccessURL); accessURL != nil {
 		obj.Status.AccessURL = accessURL
 	}
+	if remote.Failure != nil {
+		obj.Status.Failure = sandboxFailureFromOpenAPI(remote.Failure)
+	}
+}
+
+func sandboxFailureFromOpenAPI(in *openapi.SandboxFailure) *sandboxv1.SandboxFailure {
+	if in == nil || (in.Code == "" && in.Message == "") {
+		return nil
+	}
+	return &sandboxv1.SandboxFailure{Code: in.Code, Message: in.Message}
 }
 
 func sandboxEnvFromOpenAPI(in []openapi.Env) []sandboxv1.EnvVar {

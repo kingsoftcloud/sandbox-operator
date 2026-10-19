@@ -482,6 +482,7 @@ func TestApplySandboxStatusIncludesRuntimeDetails(t *testing.T) {
 				Options:        map[string]interface{}{"version": "3"},
 			}},
 		},
+		Failure: &openapi.SandboxFailure{Code: "ContainerStartFailed", Message: "container failed to start"},
 	})
 
 	if obj.Status.Endpoint != "https://endpoint.example.com" {
@@ -514,6 +515,9 @@ func TestApplySandboxStatusIncludesRuntimeDetails(t *testing.T) {
 	if obj.Status.NfsMountConfig == nil || len(obj.Status.NfsMountConfig.MountPoints) != 1 || obj.Status.NfsMountConfig.MountPoints[0].Server != "nfs.example.internal" || obj.Status.NfsMountConfig.MountPoints[0].RemotePath != "/exports/data" {
 		t.Fatalf("sandbox NFS mount config mismatch: %#v", obj.Status.NfsMountConfig)
 	}
+	if obj.Status.Failure == nil || obj.Status.Failure.Code != "ContainerStartFailed" || obj.Status.Failure.Message != "container failed to start" {
+		t.Fatalf("sandbox failure mismatch: %#v", obj.Status.Failure)
+	}
 }
 
 func TestApplyTemplateSpecIncludesNFS(t *testing.T) {
@@ -545,6 +549,7 @@ func TestApplySandboxStatusPreservesAccessURLWhenDetailOmitsIt(t *testing.T) {
 	obj := &sandboxv1.Sandbox{
 		Status: sandboxv1.SandboxStatus{
 			AccessURL: &sandboxv1.SandboxURLs{CodeURL: "https://access-url.example.com"},
+			Failure:   &sandboxv1.SandboxFailure{Code: "OldFailure", Message: "old failure"},
 		},
 	}
 
@@ -553,17 +558,29 @@ func TestApplySandboxStatusPreservesAccessURLWhenDetailOmitsIt(t *testing.T) {
 	if obj.Status.AccessURL == nil || obj.Status.AccessURL.CodeURL != "https://access-url.example.com" {
 		t.Fatalf("sandbox accessUrl should be preserved when openapi detail omits it: %#v", obj.Status.AccessURL)
 	}
+	if obj.Status.Failure != nil {
+		t.Fatalf("sandbox failure should be cleared when detail response omits it: %#v", obj.Status.Failure)
+	}
 }
 
-func TestApplySandboxAccessURLFromOpenAPI(t *testing.T) {
+func TestApplySandboxListStatusFromOpenAPI(t *testing.T) {
 	obj := &sandboxv1.Sandbox{}
 
-	ApplySandboxAccessURLFromOpenAPI(obj, openapi.Sandbox{
+	ApplySandboxListStatusFromOpenAPI(obj, openapi.Sandbox{
 		AccessURL: &openapi.URLs{Code: "https://access-url.example.com"},
+		Failure:   &openapi.SandboxFailure{Code: "ProvisionFailed", Message: "capacity unavailable"},
 	})
 
 	if obj.Status.AccessURL == nil || obj.Status.AccessURL.CodeURL != "https://access-url.example.com" {
 		t.Fatalf("sandbox accessUrl was not applied from list response: %#v", obj.Status.AccessURL)
+	}
+	if obj.Status.Failure == nil || obj.Status.Failure.Code != "ProvisionFailed" || obj.Status.Failure.Message != "capacity unavailable" {
+		t.Fatalf("sandbox failure was not applied from list response: %#v", obj.Status.Failure)
+	}
+
+	ApplySandboxListStatusFromOpenAPI(obj, openapi.Sandbox{})
+	if obj.Status.Failure == nil || obj.Status.Failure.Code != "ProvisionFailed" {
+		t.Fatalf("partial list response should preserve existing failure: %#v", obj.Status.Failure)
 	}
 }
 

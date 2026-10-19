@@ -395,6 +395,23 @@ status:
         readOnly: false
 ```
 
+If OpenAPI accepts the creation request but asynchronous instance creation subsequently fails, the structured error is synced to `status.failure`:
+
+```yaml
+status:
+  phase: Failed
+  failure:
+    code: NoStack
+    message: insufficient underlying resources
+```
+
+Only `NoStack` and `CreateTimeout` are currently supported:
+
+* `NoStack`: insufficient underlying resources, such as sold-out compute capacity or EBS volumes.
+* `CreateTimeout`: general fallback for an instance creation timeout. Mount failures that remain unresolved after platform retries currently also use `CreateTimeout`. More specific codes for mount failures, image pull failures, and similar causes are planned.
+
+Quota exhaustion is not written to `status.failure`. When the mutating webhook calls `StartSandboxInstance`, the OpenAPI error immediately rejects `kubectl apply`, so no Sandbox CR is created. An existing `status.failure` is cleared after the instance recovers or the remote response no longer includes failure information.
+
 ## 5. Inline Template Sandbox Example
 
 An inline template is useful when you want to create a temporary template while creating an instance. The operator first calls OpenAPI to create the template and then starts the instance.

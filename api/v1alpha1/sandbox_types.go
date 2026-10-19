@@ -58,9 +58,15 @@ type SandboxStatus struct {
 	Ks3MountConfig      *MountConfig                `json:"ks3MountConfig,omitempty"`
 	KpfsMountConfig     *MountConfig                `json:"kpfsMountConfig,omitempty"`
 	NfsMountConfig      *MountConfig                `json:"nfsMountConfig,omitempty"`
+	Failure             *SandboxFailure             `json:"failure,omitempty"`
 	CustomConfiguration *SandboxCustomConfiguration `json:"customConfiguration,omitempty"`
 	CredentialDrift     *CredentialDriftSet         `json:"credentialDrift,omitempty"`
 	Conditions          []metav1.Condition          `json:"conditions,omitempty"`
+}
+
+type SandboxFailure struct {
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 type SandboxURLs struct {

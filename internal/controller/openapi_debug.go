@@ -14,7 +14,15 @@ func sandboxOpenAPIDebugValues(remote openapi.Sandbox) []any {
 		"remoteHasKS3MountConfig", remote.KS3MountConfig != nil,
 		"remoteHasKPFSMountConfig", remote.KPFSMountConfig != nil,
 		"remoteHasNFSMountConfig", remote.NFSMountConfig != nil,
+		"remoteFailureCode", sandboxFailureCode(remote.Failure),
 	}
+}
+
+func sandboxFailureCode(failure *openapi.SandboxFailure) string {
+	if failure == nil {
+		return ""
+	}
+	return failure.Code
 }
 
 func sandboxURLFieldCount(urls *openapi.URLs) int {

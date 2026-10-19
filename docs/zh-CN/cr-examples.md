@@ -394,6 +394,23 @@ status:
         readOnly: false
 ```
 
+如果 OpenAPI 已受理创建请求，但实例后续异步创建失败，结构化错误会同步到 `status.failure`：
+
+```yaml
+status:
+  phase: Failed
+  failure:
+    code: NoStack
+    message: 底层资源不足
+```
+
+当前只支持 `NoStack` 和 `CreateTimeout`：
+
+- `NoStack`：底层资源不足，例如机器售罄、EBS 云盘售罄等。
+- `CreateTimeout`：实例创建超时的通用兜底。当前挂载失败等错误经过底层重试后仍会归入 `CreateTimeout`；后续将继续适配挂载失败、镜像拉取失败等更具体的错误码。
+
+配额不足不会写入 `status.failure`。mutating webhook 调用 `StartSandboxInstance` 时会收到 OpenAPI 错误并直接拒绝 `kubectl apply`，因此 Sandbox CR 不会创建。实例恢复或远端不再返回失败信息后，已有的 `status.failure` 会被清除。
+
 ## 5. Inline Template Sandbox 示例
 
 内联模板适合在创建实例时临时创建一个模板。operator 会先调用 OpenAPI 创建模板，再启动实例。

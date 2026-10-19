@@ -108,6 +108,7 @@ The following field mapping applies:
 | template ID | `metadata.annotations["sandbox.kce.ksyun.com/template-id"]` and `spec.templateRef.id` |
 | timeout | `spec.timeoutSeconds` and `status.timeoutSeconds` |
 | instance phase | `status.phase` |
+| instance failure | `status.failure.code`, `status.failure.message` |
 | access endpoint | `status.endpoint`, `status.urls`, `status.accessUrl` |
 | token | `status.token` |
 | image | `status.imageUrl` |
@@ -119,6 +120,25 @@ The following field mapping applies:
 | end time | `status.endTime` |
 
 Instance-level environment variables and mount configurations override template-level settings. After the timeout is modified through the console, the next sync updates both `spec.timeoutSeconds` and `status.timeoutSeconds`.
+
+When OpenAPI has accepted an instance creation request but asynchronous creation subsequently fails, the OpenAPI detail and list responses return structured `failure.code` and `failure.message` values. The operator syncs them as:
+
+```yaml
+status:
+  phase: Failed
+  failure:
+    code: NoStack
+    message: insufficient underlying resources
+```
+
+Only the following structured failure codes are currently supported:
+
+| Code | Meaning |
+| --- | --- |
+| `NoStack` | Insufficient underlying resources, such as sold-out compute capacity or EBS volumes. |
+| `CreateTimeout` | General fallback for an instance creation timeout. Mount failures that remain unresolved after platform retries currently also use this code. More specific codes for mount failures, image pull failures, and similar causes are planned. |
+
+`status.failure` describes an asynchronous creation or runtime failure after the platform has accepted the instance. Synchronous `StartSandboxInstance` errors, including quota exhaustion, reject CR creation immediately and are not written to `status.failure`. OpenAPI call failures and Kubernetes synchronization failures remain visible through `status.conditions` and Operator logs. The operator clears an existing `status.failure` when the instance detail response no longer contains `failure`.
 
 ### 2.4 Deletion or reclamation from OpenAPI
 
@@ -291,6 +311,12 @@ When the CR is created, the mutating webhook calls OpenAPI to start the instance
 
 The reconciler then queries OpenAPI by instance ID and writes back the `status`.
 
+If the template instance quota is exhausted, OpenAPI rejects `StartSandboxInstance` during admission. In this case, `kubectl apply` fails immediately; the Sandbox CR is not created and the error is not recorded later in `status.failure`. For example:
+
+```text
+Error from server (Forbidden): error when creating "sbx.yaml": admission webhook "msandbox.sandbox.kce.ksyun.com" denied the request: openapi StartSandboxInstance failed: http 400 requestId=sandbox-operator-1792392147311118224: 当前模板下的沙箱实例数量已达到配额限制
+```
+
 `Sandbox` supports two creation methods:
 
 * `spec.templateRef.name` or `spec.templateRef.id`: creates an instance from an existing template.
@@ -362,6 +388,8 @@ If you need to delete instances created by the Claim, delete the corresponding c
 | `metadata.annotations["sandbox.kce.ksyun.com/sandbox-id"]` | Platform instance ID. |
 | `metadata.annotations["sandbox.kce.ksyun.com/template-id"]` | Platform template ID. |
 | `status.phase` | Instance phase. |
+| `status.failure.code` | Structured instance failure code returned by OpenAPI. Present only on failure. |
+| `status.failure.message` | Instance failure message returned by OpenAPI. Present only on failure. |
 | `status.timeoutSeconds` | Instance timeout. |
 | `status.endpoint` | Instance endpoint. |
 | `status.urls` / `status.accessUrl` | Access URLs. |

@@ -317,7 +317,7 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 			if knownIDs[sandboxID] {
 				if obj := knownByID[sandboxID]; obj != nil {
 					statusBefore := cloneForCompare(obj.Status)
-					mapper.ApplySandboxAccessURLFromOpenAPI(obj, remote)
+					mapper.ApplySandboxListStatusFromOpenAPI(obj, remote)
 					if hasChanged(statusBefore, obj.Status) {
 						if err := p.Client.Status().Update(ctx, obj); err != nil {
 							return ignoreConflict(err)

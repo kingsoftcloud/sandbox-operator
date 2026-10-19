@@ -198,7 +198,8 @@ func TestSandboxSourceResponseShape(t *testing.T) {
 		"CustomConfiguration":{"ImageUrl":"hub.kce.ksyun.com/sandbox/aio:v1","Port":8000,"Command":"/entrypoint.sh"},
 		"Envs":[{"Key":"APP_ENV","Value":"prod"}],
 		"Ks3MountConfig":{"Ks3Enable":true,"Ks3MountPoints":[{"BucketName":"bucket-a","RemotePath":"/datasets","LocalMountPath":"/mnt/ks3","ReadOnly":true}]},
-		"NfsMountConfig":{"NfsEnable":true,"NfsMountPoints":[{"Server":"nfs.example.internal","ExportPath":"/exports/data","LocalMountPath":"/mnt/nfs","ReadOnly":false,"Options":{"version":"3","retryMode":"hard"}}]}
+		"NfsMountConfig":{"NfsEnable":true,"NfsMountPoints":[{"Server":"nfs.example.internal","ExportPath":"/exports/data","LocalMountPath":"/mnt/nfs","ReadOnly":false,"Options":{"version":"3","retryMode":"hard"}}]},
+		"failure":{"code":"ContainerStartFailed","message":"container failed to start"}
 	}`)
 	if err := json.Unmarshal(raw, &sandbox); err != nil {
 		t.Fatal(err)
@@ -224,6 +225,30 @@ func TestSandboxSourceResponseShape(t *testing.T) {
 	nfsPoint := sandbox.NFSMountConfig.NFSMounts[0]
 	if nfsPoint.Server != "nfs.example.internal" || nfsPoint.ExportPath != "/exports/data" || nfsPoint.Options["version"] != "3" {
 		t.Fatalf("NFS mount point decode failed: %#v", nfsPoint)
+	}
+	if sandbox.Failure == nil || sandbox.Failure.Code != "ContainerStartFailed" || sandbox.Failure.Message != "container failed to start" {
+		t.Fatalf("failure decode failed: %#v", sandbox.Failure)
+	}
+}
+
+func TestSandboxListResponseDecodesFailure(t *testing.T) {
+	var list SandboxList
+	raw := []byte(`{
+		"InstanceSet":[{
+			"InstanceId":"ins-1",
+			"Status":"FAILED",
+			"failure":{"code":"ProvisionFailed","message":"capacity unavailable"}
+		}],
+		"TotalCount":1
+	}`)
+	if err := json.Unmarshal(raw, &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 1 || list.Items[0].Failure == nil {
+		t.Fatalf("list failure decode failed: %#v", list)
+	}
+	if list.Items[0].Failure.Code != "ProvisionFailed" || list.Items[0].Failure.Message != "capacity unavailable" {
+		t.Fatalf("unexpected list failure: %#v", list.Items[0].Failure)
 	}
 }
 

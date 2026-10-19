@@ -2,7 +2,8 @@
 .idea
 .vscode
 docs
-sandbox-openapi
+# Reference-only OpenAPI source; exclude it from the image build context.
+sandbox-openapi/
 Sandbox+Operator设计文档.pdf
 config/samples
 charts/*.tgz
