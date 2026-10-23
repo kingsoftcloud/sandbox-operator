@@ -5,6 +5,7 @@ resources=(
   sandboxtemplates.sandbox.kce.ksyun.com
   sandboxes.sandbox.kce.ksyun.com
   sandboxclaims.sandbox.kce.ksyun.com
+  sandboximagecommits.sandbox.kce.ksyun.com
 )
 
 require() {

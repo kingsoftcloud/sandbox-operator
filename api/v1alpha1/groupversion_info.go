@@ -25,6 +25,8 @@ func init() {
 		&SandboxList{},
 		&SandboxClaim{},
 		&SandboxClaimList{},
+		&SandboxImageCommit{},
+		&SandboxImageCommitList{},
 	)
 }
 
@@ -42,3 +44,5 @@ var _ runtime.Object = &Sandbox{}
 var _ runtime.Object = &SandboxList{}
 var _ runtime.Object = &SandboxClaim{}
 var _ runtime.Object = &SandboxClaimList{}
+var _ runtime.Object = &SandboxImageCommit{}
+var _ runtime.Object = &SandboxImageCommitList{}

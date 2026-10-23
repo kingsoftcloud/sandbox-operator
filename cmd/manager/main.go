@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -84,6 +86,12 @@ func main() {
 	credentialManager := credentials.NewManager(mgr.GetClient(), defaultOpenAPISecretName)
 	operatorNamespace := envOrDefault("OPERATOR_NAMESPACE", envOrDefault("POD_NAMESPACE", "sandbox-operator-system"))
 	operatorUsername := envOrDefault("OPERATOR_USERNAME", fmt.Sprintf("system:serviceaccount:%s:sandbox-operator", operatorNamespace))
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &sandboxv1.SandboxImageCommit{}, sandboxwebhook.ImageCommitSandboxIDField, func(obj client.Object) []string {
+		return []string{obj.(*sandboxv1.SandboxImageCommit).Spec.SandboxID}
+	}); err != nil {
+		ctrl.Log.Error(err, "unable to index SandboxImageCommit by sandbox ID")
+		os.Exit(1)
+	}
 
 	if err := (&controller.SandboxTemplateReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Credentials: credentialManager, OpenAPI: openapiClient}).SetupWithManager(mgr); err != nil {
 		ctrl.Log.Error(err, "unable to create SandboxTemplate controller")
@@ -95,6 +103,10 @@ func main() {
 	}
 	if err := (&controller.SandboxClaimReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr); err != nil {
 		ctrl.Log.Error(err, "unable to create SandboxClaim controller")
+		os.Exit(1)
+	}
+	if err := (&controller.SandboxImageCommitReconciler{Client: mgr.GetClient(), Credentials: credentialManager, OpenAPI: openapiClient}).SetupWithManager(mgr); err != nil {
+		ctrl.Log.Error(err, "unable to create SandboxImageCommit controller")
 		os.Exit(1)
 	}
 
@@ -110,13 +122,19 @@ func main() {
 	sandboxMutatingHandler.OperatorUsername = operatorUsername
 	claimMutatingHandler := sandboxwebhook.NewMutatingHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "SandboxClaim")
 	claimMutatingHandler.OperatorUsername = operatorUsername
+	imageCommitHandler := sandboxwebhook.NewHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "SandboxImageCommit")
+	imageCommitHandler.OperatorUsername = operatorUsername
+	imageCommitMutatingHandler := sandboxwebhook.NewMutatingHandler(mgr.GetClient(), mgr.GetScheme(), credentialManager, openapiClient, "SandboxImageCommit")
+	imageCommitMutatingHandler.OperatorUsername = operatorUsername
 
 	mgr.GetWebhookServer().Register("/mutate-sandbox-kce-ksyun-com-v1alpha1-sandboxtemplate", &admission.Webhook{Handler: templateMutatingHandler})
 	mgr.GetWebhookServer().Register("/mutate-sandbox-kce-ksyun-com-v1alpha1-sandbox", &admission.Webhook{Handler: sandboxMutatingHandler})
 	mgr.GetWebhookServer().Register("/mutate-sandbox-kce-ksyun-com-v1alpha1-sandboxclaim", &admission.Webhook{Handler: claimMutatingHandler})
+	mgr.GetWebhookServer().Register("/mutate-sandbox-kce-ksyun-com-v1alpha1-sandboximagecommit", &admission.Webhook{Handler: imageCommitMutatingHandler})
 	mgr.GetWebhookServer().Register("/validate-sandbox-kce-ksyun-com-v1alpha1-sandboxtemplate", &admission.Webhook{Handler: templateHandler})
 	mgr.GetWebhookServer().Register("/validate-sandbox-kce-ksyun-com-v1alpha1-sandbox", &admission.Webhook{Handler: sandboxHandler})
 	mgr.GetWebhookServer().Register("/validate-sandbox-kce-ksyun-com-v1alpha1-sandboxclaim", &admission.Webhook{Handler: claimHandler})
+	mgr.GetWebhookServer().Register("/validate-sandbox-kce-ksyun-com-v1alpha1-sandboximagecommit", &admission.Webhook{Handler: imageCommitHandler})
 
 	poller := &controller.Poller{
 		Client:                  mgr.GetClient(),

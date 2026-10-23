@@ -638,3 +638,56 @@ status:
 ```
 
 `SandboxClaim` 是一次性声明，不支持更新。删除 Claim 不会删除已经创建出的子 `Sandbox`；如需删除实例，需要删除子 `Sandbox`。
+
+## 7. SandboxImageCommit 镜像提交示例
+
+目标仓库需要认证时，在相同命名空间创建 Secret。可复用第 1.3 节的 `docker-registry` 形式，并将 `--docker-server` 设置为目标镜像地址的仓库域名。公共仓库无需 `registryCredentialRef`。
+
+```bash
+
+```
+
+```yaml
+apiVersion: sandbox.kce.ksyun.com/v1alpha1
+kind: SandboxImageCommit
+metadata:
+  name: commit-demo
+  namespace: sandbox-demo
+spec:
+  # 运行中沙箱的平台实例 ID，可从 Sandbox 的 sandbox-id 注解获取。
+  sandboxID: "<SANDBOX_ID>"
+  # 目标镜像完整地址，包含仓库、镜像名和标签。
+  image: harbor.example.com/team/dev:v1
+  # 目标仓库需要认证时填写；凭据必须在同一命名空间。
+  registryCredentialRef:
+    name: commit-registry-credential
+    # Secret 为 dockerconfigjson 且包含多个仓库时，可显式选择。
+    server: harbor.example.com
+  # 可选。省略时使用同命名空间的 sandbox-openapi-credentials。
+  openapiCredentialRef:
+    name: sandbox-openapi-credentials
+```
+
+创建成功后，webhook 将任务 ID 写入注解。Operator 随后更新状态：
+
+```yaml
+metadata:
+  annotations:
+    sandbox.kce.ksyun.com/image-commit-task-id: "<TASK_ID>"
+status:
+  phase: Succeeded
+  imageDigest: "sha256:<DIGEST>"
+  imageRef: "harbor.example.com/team/dev:v1@sha256:<DIGEST>"
+  finishedAt: "2026-10-22T12:01:30Z"
+```
+
+任务失败时，`status` 中还会显示 OpenAPI 返回的错误码和信息，例如：
+
+```yaml
+status:
+  phase: Failed
+  errorCode: "<ERROR_CODE>"
+  message: "<ERROR_MESSAGE>"
+```
+
+`Pending`、`Running` 会继续查询；`Succeeded`、`Failed`、`Unknown` 为终态。CR 不提供 `pause`、`timeoutSeconds` 或 `stage` 字段。创建后不能修改 `spec`；删除 CR 不取消远端提交任务。

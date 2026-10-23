@@ -19,6 +19,7 @@ const (
 	PhaseUnhealthy  Phase = "Unhealthy"
 	PhaseUnknown    Phase = "Unknown"
 	PhaseSuccessful Phase = "Successful"
+	PhaseSucceeded  Phase = "Succeeded"
 )
 
 const (

@@ -12,6 +12,7 @@ This guide explains how to use Sandbox Operator through two workflows:
 | `SandboxTemplate` | `stpl` | Sandbox template. |
 | `Sandbox` | `sbx` | Single sandbox instance. |
 | `SandboxClaim` | `sbxc` | One-shot batch declaration for creating multiple instances. |
+| `SandboxImageCommit` | `sbxic` | Commit a running sandbox to an image and track the asynchronous task. |
 
 Each business namespace must contain an OpenAPI credential Secret. The default name is `sandbox-openapi-credentials`; a different name can be specified in the CR via `spec.openapiCredentialRef.name`.
 
@@ -27,6 +28,8 @@ kubectl create secret generic sandbox-openapi-credentials \
 ```
 
 The operator synchronizes only namespaces where it can read OpenAPI credentials. Templates, sandboxes, and credential Secrets must live in the same business namespace.
+
+Image commit tasks are initiated by creating a CR; the operator does not discover existing OpenAPI tasks and create `SandboxImageCommit` CRs. Registry credentials must be in the same namespace as the commit CR.
 
 ## 2. OpenAPI → Kubernetes Sync
 
@@ -366,6 +369,22 @@ kubectl delete sbxc -n sandbox-demo full-claim
 
 If you need to delete instances created by the Claim, delete the corresponding child `Sandbox` CRs.
 
+### 3.9 Commit a sandbox image
+
+Create a `SandboxImageCommit` while the sandbox is `Running`. Set the instance ID and target image, with an optional registry credential. See the [complete CR example](cr-examples.md#7-sandboximagecommit-image-commit-example).
+
+```bash
+kubectl apply -f image-commit.yaml
+kubectl get sbxic -n sandbox-demo -w
+kubectl get sbxic -n sandbox-demo commit-demo -o yaml
+```
+
+The creation webhook calls `CreateSandboxInstanceCommit`. A synchronous error rejects the CR. On success, it stores the task ID in the protected `sandbox.kce.ksyun.com/image-commit-task-id` annotation. The reconciler calls `GetSandboxInstanceCommit` about every five seconds while `status.phase` is `Pending` or `Running`; it stops at `Succeeded`, `Failed`, or `Unknown`. This interval is independent of the global `POLL_INTERVAL`. OpenAPI `Stage` is not used to determine the task state.
+
+The CR does not expose `ContainerName`, `Pause`, or `TimeoutSeconds`. All three are omitted from the request so OpenAPI applies its defaults (`Pause` and `TimeoutSeconds` currently default to `true` and 1800 seconds). If the target registry requires authentication, reference a Secret in the same namespace with `spec.registryCredentialRef.name`; the password is never stored in the CR. The spec is immutable after creation. Deleting the CR removes only the Kubernetes task record and does not cancel a remote task. Create another CR for another commit.
+
+The Sandbox DELETE webhook checks `SandboxImageCommit` resources in the same namespace. If a matching task has no phase yet or is `Pending` or `Running`, it rejects the delete request immediately. Retry after the task reaches `Succeeded`, `Failed`, or `Unknown`. A task not represented by a CR, or one started after this check, can still cause a remote delete failure; the finalizer then retains the Sandbox CR and retries. If a remote delete was previously confirmed but the detail endpoint continues to show the sandbox, the operator resubmits deletion at most once per minute to recover objects stuck by older versions.
+
 ## 4. Common Status Fields
 
 ### 4.1 SandboxTemplate
@@ -412,6 +431,18 @@ If you need to delete instances created by the Claim, delete the corresponding c
 | `status.failed` | Number of Failed/Unhealthy child Sandbox CRs. |
 | `status.sandboxes` | Child Sandbox names and phases. |
 | `status.conditions` | Processing result and exception information. |
+
+### 4.4 SandboxImageCommit
+
+| Field | Meaning |
+| --- | --- |
+| `metadata.annotations["sandbox.kce.ksyun.com/image-commit-task-id"]` | Task ID returned by OpenAPI. |
+| `status.phase` | `Pending`, `Running`, `Succeeded`, `Failed`, or `Unknown`. The last three are terminal. |
+| `status.errorCode` / `status.message` | Error code and message returned by OpenAPI when the task fails. |
+| `status.imageDigest` / `status.imageRef` | Image digest and reference returned on success. |
+| `status.createdAt` / `status.startedAt` / `status.finishedAt` | Task timestamps returned by OpenAPI. |
+| `status.lastObservedAt` | Last observation timestamp returned by OpenAPI. |
+| `status.conditions` | Last synchronization result. Check Operator logs for query errors; the reconciler retries. |
 
 ## 5. Troubleshooting Commands
 

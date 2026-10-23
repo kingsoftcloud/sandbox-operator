@@ -639,3 +639,60 @@ status:
 ```
 
 `SandboxClaim` is a one-shot declaration and does not support updates. Deleting the Claim does not delete the child `Sandbox` CRs that have already been created; delete those child CRs to remove the instances.
+
+## 7. SandboxImageCommit Image Commit Example
+
+For an authenticated target registry, create a Secret in the same namespace. You can use the `docker-registry` format from section 1.3 and set `--docker-server` to the target image registry host. Omit `registryCredentialRef` for a registry that needs no credentials.
+
+```bash
+kubectl create secret docker-registry commit-registry-credential \
+  -n sandbox-demo \
+  --docker-server=harbor.example.com \
+  --docker-username='<REGISTRY_USERNAME>' \
+  --docker-password='<REGISTRY_PASSWORD>'
+```
+
+```yaml
+apiVersion: sandbox.kce.ksyun.com/v1alpha1
+kind: SandboxImageCommit
+metadata:
+  name: commit-demo
+  namespace: sandbox-demo
+spec:
+  # Platform instance ID of a running sandbox, available in its sandbox-id annotation.
+  sandboxID: "<SANDBOX_ID>"
+  # Full target image address, including registry, image name, and tag.
+  image: harbor.example.com/team/dev:v1
+  # Required only when the target registry needs authentication.
+  registryCredentialRef:
+    name: commit-registry-credential
+    # Select the registry when the Docker config contains multiple entries.
+    server: harbor.example.com
+  # Optional. Defaults to sandbox-openapi-credentials in this namespace.
+  openapiCredentialRef:
+    name: sandbox-openapi-credentials
+```
+
+After creation, the webhook stores the task ID in an annotation. The operator then updates status:
+
+```yaml
+metadata:
+  annotations:
+    sandbox.kce.ksyun.com/image-commit-task-id: "<TASK_ID>"
+status:
+  phase: Succeeded
+  imageDigest: "sha256:<DIGEST>"
+  imageRef: "harbor.example.com/team/dev:v1@sha256:<DIGEST>"
+  finishedAt: "2026-10-22T12:01:30Z"
+```
+
+When the task fails, `status` also contains the error code and message returned by OpenAPI, for example:
+
+```yaml
+status:
+  phase: Failed
+  errorCode: "<ERROR_CODE>"
+  message: "<ERROR_MESSAGE>"
+```
+
+`Pending` and `Running` continue polling; `Succeeded`, `Failed`, and `Unknown` are terminal. The CR does not expose `pause`, `timeoutSeconds`, or `stage`. Its spec cannot be changed after creation. Deleting the CR does not cancel the remote task.

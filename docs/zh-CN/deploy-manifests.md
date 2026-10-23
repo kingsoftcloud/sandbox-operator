@@ -3,7 +3,7 @@
 原生 manifest 位于 `config/deploy/`，包含不依赖 Helm 的 operator 部署资源：
 
 - `00-namespace.yaml`：operator 命名空间。
-- `01-crd.yaml`：`SandboxTemplate`、`Sandbox`、`SandboxClaim` CRD。
+- `01-crd.yaml`：`SandboxTemplate`、`Sandbox`、`SandboxClaim`、`SandboxImageCommit` CRD。
 - `02-rbac.yaml`：ServiceAccount、ClusterRole、ClusterRoleBinding。
 - `03-config.yaml`：operator 配置 ConfigMap。
 - `04-manager.yaml`：operator Deployment。
@@ -17,7 +17,7 @@
 make deploy
 ```
 
-该命令会按正确顺序应用这些资源，创建 webhook TLS Secret 并写入 webhook CA bundle。默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019`，无需配置镜像拉取凭据。若使用自行构建的镜像，可在部署时覆盖：
+该命令会按正确顺序应用这些资源，创建 webhook TLS Secret 并写入 webhook CA bundle。默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261022`，无需配置镜像拉取凭据。若使用自行构建的镜像，可在部署时覆盖：
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
@@ -48,7 +48,7 @@ make undeploy
 
 该命令只删除 Operator 的 Deployment、Webhook、RBAC、ConfigMap 和命名空间；会保留 CRD 及业务命名空间中的 CR，避免在 Controller 已停止后触发 CRD 级联删除并卡住。
 
-如需彻底删除 CRD，先在 Operator 仍运行时删除全部 `SandboxTemplate`、`Sandbox` 和 `SandboxClaim`，等待其 finalizer 完成后执行：
+如需彻底删除 CRD，先在 Operator 仍运行时删除全部 `SandboxTemplate`、`Sandbox`、`SandboxClaim` 和 `SandboxImageCommit`，等待已有 finalizer 完成后执行：
 
 ```bash
 make purge-crds

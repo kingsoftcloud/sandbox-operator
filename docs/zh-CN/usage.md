@@ -12,6 +12,7 @@
 | `SandboxTemplate` | `stpl` | 沙箱模板。 |
 | `Sandbox` | `sbx` | 单个沙箱实例。 |
 | `SandboxClaim` | `sbxc` | 一次性批量创建沙箱实例的声明。 |
+| `SandboxImageCommit` | `sbxic` | 将运行中的沙箱提交为镜像，并跟踪异步任务状态。 |
 
 每个业务命名空间需要放置 OpenAPI 凭据 Secret。默认名称是 `sandbox-openapi-credentials`，也可以在 CR 中通过 `spec.openapiCredentialRef.name` 指定其它 Secret。
 
@@ -27,6 +28,8 @@ kubectl create secret generic sandbox-openapi-credentials \
 ```
 
 operator 只会同步能读取到 OpenAPI 凭据的命名空间。模板、沙箱、凭据 Secret 必须位于同一个业务命名空间。
+
+镜像提交任务由创建 CR 发起，不会从 OpenAPI 自动发现并创建 `SandboxImageCommit` CR。目标镜像仓库的凭据也必须放在该 CR 所在命名空间。
 
 ## 2. OpenAPI 到集群 CR 同步
 
@@ -366,6 +369,22 @@ kubectl delete sbxc -n sandbox-demo full-claim
 
 如果需要删除 Claim 创建的实例，请删除对应子 `Sandbox`。
 
+### 3.9 提交沙箱镜像
+
+沙箱处于 `Running` 时，创建 `SandboxImageCommit` 发起一次镜像提交。CR 中指定沙箱实例 ID、目标镜像地址，可选目标仓库凭据。完整 YAML 见 [CR 示例](cr-examples.md#7-sandboximagecommit-镜像提交示例)。
+
+```bash
+kubectl apply -f image-commit.yaml
+kubectl get sbxic -n sandbox-demo -w
+kubectl get sbxic -n sandbox-demo commit-demo -o yaml
+```
+
+创建 webhook 调用 `CreateSandboxInstanceCommit`。调用失败会直接拒绝创建 CR；成功后，任务 ID 写入受保护的 `sandbox.kce.ksyun.com/image-commit-task-id` 注解。reconciler 使用该 ID 调用 `GetSandboxInstanceCommit`，约每 5 秒查询一次，直到 `status.phase` 成为 `Succeeded`、`Failed` 或 `Unknown`。`Pending`、`Running` 会继续查询。这里的 5 秒由 reconciler 控制，不受全局 `POLL_INTERVAL` 影响；不使用 OpenAPI 返回的 `Stage` 判断状态。
+
+`ContainerName`、`Pause` 和 `TimeoutSeconds` 不在 CR 中提供，调用时省略，由 OpenAPI 使用默认值（`Pause` 和 `TimeoutSeconds` 目前分别为 `true` 和 1800 秒）。提交目标仓库有认证要求时，通过 `spec.registryCredentialRef.name` 引用同命名空间 Secret；密码不会写入 CR。创建后 `spec` 不可修改；删除 CR 只删除集群中的任务记录，不会取消已经发起的远端任务。终态后不会再查询；如需再次提交，创建新的 CR。
+
+提交任务尚未完成时，删除 Sandbox CR 的 webhook 会检查同命名空间的 `SandboxImageCommit`：若对应任务状态为空、`Pending` 或 `Running`，会直接拒绝删除并返回错误。等待任务进入 `Succeeded`、`Failed` 或 `Unknown` 后重试。若提交任务未记录为 CR，或检查后才开始，底层仍可能拒绝删除；此时 finalizer 保留 CR 并重试远端删除。若远端已确认删除但详情持续可见，Operator 最多每分钟补发一次删除，以恢复旧版本可能遗留的卡住状态。
+
 ## 4. 常用状态字段
 
 ### 4.1 SandboxTemplate
@@ -412,6 +431,18 @@ kubectl delete sbxc -n sandbox-demo full-claim
 | `status.failed` | Failed/Unhealthy 子 Sandbox 数量。 |
 | `status.sandboxes` | 子 Sandbox 名称和状态。 |
 | `status.conditions` | 处理结果和异常信息。 |
+
+### 4.4 SandboxImageCommit
+
+| 字段 | 说明 |
+| --- | --- |
+| `metadata.annotations["sandbox.kce.ksyun.com/image-commit-task-id"]` | OpenAPI 返回的任务 ID。 |
+| `status.phase` | `Pending`、`Running`、`Succeeded`、`Failed` 或 `Unknown`。后三者为终态。 |
+| `status.errorCode` / `status.message` | 任务失败时 OpenAPI 返回的错误码和错误信息。 |
+| `status.imageDigest` / `status.imageRef` | 成功后由 OpenAPI 返回的镜像摘要和引用。 |
+| `status.createdAt` / `status.startedAt` / `status.finishedAt` | OpenAPI 返回的任务时间。 |
+| `status.lastObservedAt` | OpenAPI 返回的最后观测时间。 |
+| `status.conditions` | 最近一次同步结果。查询 OpenAPI 失败时可结合 Operator 日志排查，reconciler 会重试。 |
 
 ## 5. 排查命令
 

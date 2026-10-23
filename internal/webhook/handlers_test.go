@@ -1,13 +1,67 @@
 package webhook
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	sandboxv1 "sandbox-operator/api/v1alpha1"
+	"sandbox-operator/internal/annotations"
 )
+
+func TestSandboxDeleteAdmissionChecksImageCommit(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		phase     sandboxv1.Phase
+		sandboxID string
+		deny      bool
+	}{
+		{"new task", "", "sandbox-1", true},
+		{"pending task", sandboxv1.PhasePending, "sandbox-1", true},
+		{"running task", sandboxv1.PhaseRunning, "sandbox-1", true},
+		{"succeeded task", sandboxv1.PhaseSucceeded, "sandbox-1", false},
+		{"failed task", sandboxv1.PhaseFailed, "sandbox-1", false},
+		{"unrelated task", sandboxv1.PhaseRunning, "sandbox-2", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			if err := sandboxv1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			commit := &sandboxv1.SandboxImageCommit{
+				ObjectMeta: metav1.ObjectMeta{Name: "commit-1", Namespace: "tenant"},
+				Spec:       sandboxv1.SandboxImageCommitSpec{SandboxID: tc.sandboxID},
+				Status:     sandboxv1.SandboxImageCommitStatus{Phase: tc.phase},
+			}
+			k8s := fake.NewClientBuilder().WithScheme(scheme).WithObjects(commit).
+				WithIndex(&sandboxv1.SandboxImageCommit{}, ImageCommitSandboxIDField, func(obj client.Object) []string {
+					return []string{obj.(*sandboxv1.SandboxImageCommit).Spec.SandboxID}
+				}).Build()
+			h := NewHandler(k8s, scheme, nil, nil, "Sandbox")
+			sandbox := sandboxv1.Sandbox{ObjectMeta: metav1.ObjectMeta{
+				Name: "sandbox-1", Namespace: "tenant", Annotations: map[string]string{annotations.SandboxID: "sandbox-1"},
+			}}
+			raw, err := json.Marshal(sandbox)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp := h.Handle(context.Background(), admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{
+				Operation: admissionv1.Delete, OldObject: runtime.RawExtension{Raw: raw},
+			}})
+			if resp.Allowed == tc.deny {
+				t.Fatalf("unexpected delete admission: allowed=%t, deny=%t, response=%+v", resp.Allowed, tc.deny, resp)
+			}
+		})
+	}
+}
 
 func TestSandboxSpecOnlyTimeoutChanged(t *testing.T) {
 	oldSpec := sandboxv1.SandboxSpec{

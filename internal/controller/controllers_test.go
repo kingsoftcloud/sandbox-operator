@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -344,6 +345,47 @@ func TestDeletingSandboxWaitsForDetailEndpointToDisappear(t *testing.T) {
 	}
 }
 
+func TestDeletingSandboxRetriesStaleConfirmedDelete(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	if err := sandboxv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	deletedAt := metav1.NewTime(time.Now().Add(-2 * SandboxDeleteRetryInterval))
+	sandbox := &sandboxv1.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Name: "stale-delete", Namespace: "sandbox-demo", DeletionTimestamp: &deletedAt,
+		Finalizers: []string{SandboxFinalizer}, Annotations: map[string]string{
+			annotations.SandboxID: "sandbox-1", annotations.DeleteRequested: "true",
+		},
+	}}
+	credential := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: credentials.DefaultOpenAPISecretName, Namespace: sandbox.Namespace},
+		Data: map[string][]byte{
+			credentials.KeyAccessKeyID: []byte("ak"), credentials.KeySecretAccessKey: []byte("sk"), credentials.KeyRegion: []byte("cn-beijing-6"),
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, credential).Build()
+	api := &eventuallyDeletedSandboxOpenAPI{detailVisible: true}
+	r := &SandboxReconciler{Client: c, Credentials: credentials.NewManager(c, credentials.DefaultOpenAPISecretName), OpenAPI: api}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name}}
+	if _, err := r.Reconcile(ctx, request); err != nil || api.deleteSandboxCalls != 1 {
+		t.Fatalf("stale deletion must be retried once: err=%v calls=%d", err, api.deleteSandboxCalls)
+	}
+	if _, err := r.Reconcile(ctx, request); err != nil || api.deleteSandboxCalls != 1 {
+		t.Fatalf("deletion retry must be rate limited: err=%v calls=%d", err, api.deleteSandboxCalls)
+	}
+	api.detailVisible = false
+	if _, err := r.Reconcile(ctx, request); err != nil {
+		t.Fatalf("finalize after remote disappears: %v", err)
+	}
+	var deleted sandboxv1.Sandbox
+	if err := c.Get(ctx, request.NamespacedName, &deleted); !apierrors.IsNotFound(err) {
+		t.Fatalf("sandbox should be finalized, get err=%v", err)
+	}
+}
+
 func TestMissingSandboxDoesNotSubmitAnotherDelete(t *testing.T) {
 	ctx := context.Background()
 	scheme := runtime.NewScheme()
@@ -484,5 +526,13 @@ func (c *countingOpenAPI) GetSandbox(context.Context, openapi.Credential, string
 }
 
 func (c *countingOpenAPI) ListSandboxes(context.Context, openapi.Credential, openapi.ListSandboxesRequest) (*openapi.SandboxList, error) {
+	return nil, nil
+}
+
+func (c *countingOpenAPI) CreateSandboxImageCommit(context.Context, openapi.Credential, openapi.CreateSandboxImageCommitRequest) (*openapi.CreateSandboxImageCommitResponse, error) {
+	return nil, nil
+}
+
+func (c *countingOpenAPI) GetSandboxImageCommit(context.Context, openapi.Credential, string, string) (*openapi.SandboxImageCommit, error) {
 	return nil, nil
 }

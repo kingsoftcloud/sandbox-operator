@@ -23,6 +23,8 @@ import (
 
 type Mode string
 
+const ImageCommitSandboxIDField = "spec.sandboxID"
+
 const (
 	ModeValidate Mode = "validate"
 	ModeMutate   Mode = "mutate"
@@ -73,6 +75,8 @@ func (h *Handler) Handle(ctx context.Context, req admission.Request) admission.R
 		return h.handleSandbox(ctx, req)
 	case "SandboxClaim":
 		return h.handleClaim(ctx, req)
+	case "SandboxImageCommit":
+		return h.handleImageCommit(ctx, req)
 	default:
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("unsupported webhook kind %s", h.Kind))
 	}
@@ -93,6 +97,8 @@ func (h *Handler) handleMutating(ctx context.Context, req admission.Request) adm
 		return h.mutateSandboxCreate(ctx, req)
 	case "SandboxClaim":
 		return h.mutateClaimCreate(ctx, req)
+	case "SandboxImageCommit":
+		return h.mutateImageCommitCreate(ctx, req)
 	default:
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("unsupported webhook kind %s", h.Kind))
 	}
@@ -222,10 +228,35 @@ func (h *Handler) handleSandbox(ctx context.Context, req admission.Request) admi
 		}
 		return admission.Allowed("sandbox update accepted")
 	case admissionv1.Delete:
+		var obj sandboxv1.Sandbox
+		if err := h.decodeOld(req, &obj); err != nil {
+			return admission.Errored(http.StatusBadRequest, err)
+		}
+		if err := h.validateSandboxDelete(ctx, &obj); err != nil {
+			return admission.Denied(err.Error())
+		}
 		return admission.Allowed("sandbox deletion handled by finalizer")
 	default:
 		return admission.Allowed("operation ignored")
 	}
+}
+
+func (h *Handler) validateSandboxDelete(ctx context.Context, obj *sandboxv1.Sandbox) error {
+	sandboxID := annotations.Get(obj.Annotations, annotations.SandboxID)
+	if sandboxID == "" {
+		return nil
+	}
+	var commits sandboxv1.SandboxImageCommitList
+	if err := h.Client.List(ctx, &commits, client.InNamespace(obj.Namespace), client.MatchingFields{ImageCommitSandboxIDField: sandboxID}); err != nil {
+		return fmt.Errorf("check sandbox image commit tasks before deletion: %w", err)
+	}
+	for _, commit := range commits.Items {
+		if commit.DeletionTimestamp.IsZero() &&
+			(commit.Status.Phase == "" || commit.Status.Phase == sandboxv1.PhasePending || commit.Status.Phase == sandboxv1.PhaseRunning) {
+			return fmt.Errorf("sandbox image commit %s is still in progress; wait for it to finish before deleting the sandbox", commit.Name)
+		}
+	}
+	return nil
 }
 
 func (h *Handler) handleClaim(ctx context.Context, req admission.Request) admission.Response {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="${IMAGE:-hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019}"
+IMAGE="${IMAGE:-hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261022}"
 IMAGE_PULL_SECRET="${IMAGE_PULL_SECRET:-}"
 NAMESPACE="${NAMESPACE:-sandbox-operator-system}"
 SERVICE_NAME="${SERVICE_NAME:-sandbox-operator-webhook}"
@@ -86,12 +86,14 @@ patch_webhook_ca_bundle() {
   kubectl patch mutatingwebhookconfiguration sandbox-operator-mutating-webhook --type=json -p "[
     {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
     {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-    {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
+    {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+    {\"op\":\"add\",\"path\":\"/webhooks/3/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
   ]"
   kubectl patch validatingwebhookconfiguration sandbox-operator-validating-webhook --type=json -p "[
     {\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
     {\"op\":\"add\",\"path\":\"/webhooks/1/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
-    {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
+    {\"op\":\"add\",\"path\":\"/webhooks/2/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"},
+    {\"op\":\"add\",\"path\":\"/webhooks/3/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}
   ]"
 }
 

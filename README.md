@@ -12,22 +12,24 @@
 
 ## Overview
 
-Sandbox Operator provides a Kubernetes-native way to manage [Kingsoft Cloud Sandbox](https://www.ksyun.com/) resources. It exposes three Custom Resource Definitions (CRDs) that mirror the Sandbox OpenAPI concepts:
+Sandbox Operator provides a Kubernetes-native way to manage [Kingsoft Cloud Sandbox](https://www.ksyun.com/) resources. It exposes four Custom Resource Definitions (CRDs):
 
 | Kind | Short Name | Description |
 |------|------------|-------------|
 | `SandboxTemplate` | `stpl` | Sandbox template describing image, compute, network, storage, logging, and preheat-pool configuration. |
 | `Sandbox` | `sbx` | A single sandbox instance. |
 | `SandboxClaim` | `sbxc` | A one-shot batch declaration that creates multiple sandbox instances. |
+| `SandboxImageCommit` | `sbxic` | Commit a running sandbox to an image and track the task. |
 
 The operator synchronizes resources in both directions:
 
 * **OpenAPI → Kubernetes**: The operator periodically polls the Sandbox OpenAPI and reflects template and instance state into the cluster as CRs.
 * **Kubernetes → OpenAPI**: Creating, updating, or deleting `SandboxTemplate` and `Sandbox` CRs invokes the corresponding Sandbox OpenAPI operation. `SandboxClaim` is a one-shot creation declaration; deleting the claim does not delete already-created instances.
+* **Image commits**: Creating a `SandboxImageCommit` starts a commit task; the operator queries its status until it reaches a terminal state.
 
 ## Features
 
-* Three CRDs: `SandboxTemplate`, `Sandbox`, and `SandboxClaim`.
+* Four CRDs: `SandboxTemplate`, `Sandbox`, `SandboxClaim`, and `SandboxImageCommit`.
 * Bidirectional synchronization between Kubernetes and the Sandbox OpenAPI.
 * Mutating and validating admission webhooks.
 * Helm Chart and raw Kubernetes manifest deployment options.
@@ -59,7 +61,7 @@ Or use the raw manifests:
 make deploy
 ```
 
-Both commands use the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019` and do not require an image-pull credential. To build and use your own image, see the [deployment guide](docs/en/deployment.md).
+Both commands use the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261022` and do not require an image-pull credential. To build and use your own image, see the [deployment guide](docs/en/deployment.md).
 
 Common deployment parameters:
 

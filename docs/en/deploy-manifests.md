@@ -7,7 +7,7 @@ The manifest directory is `config/deploy/`:
 | File | Description |
 | --- | --- |
 | `00-namespace.yaml` | Operator namespace. |
-| `01-crd.yaml` | CRDs for `SandboxTemplate`, `Sandbox`, and `SandboxClaim`. |
+| `01-crd.yaml` | CRDs for `SandboxTemplate`, `Sandbox`, `SandboxClaim`, and `SandboxImageCommit`. |
 | `02-rbac.yaml` | ServiceAccount, ClusterRole, and ClusterRoleBinding. |
 | `03-config.yaml` | Operator configuration ConfigMap. |
 | `04-manager.yaml` | Operator Deployment. |
@@ -21,7 +21,7 @@ From the repository root, run:
 make deploy
 ```
 
-The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019`; no image-pull credential is required. To use your own image, override it at deployment time:
+The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261022`; no image-pull credential is required. To use your own image, override it at deployment time:
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0
@@ -52,7 +52,7 @@ make undeploy
 
 This removes the Operator Deployment, webhooks, RBAC, ConfigMap, and namespace, but preserves CRDs and CRs in business namespaces. This avoids blocking CRD cascading cleanup after the controller has stopped.
 
-To remove CRDs completely, first delete all `SandboxTemplate`, `Sandbox`, and `SandboxClaim` resources while the Operator is still running and wait for their finalizers to finish. Then run:
+To remove CRDs completely, first delete all `SandboxTemplate`, `Sandbox`, `SandboxClaim`, and `SandboxImageCommit` resources while the Operator is still running and wait for existing finalizers to finish. Then run:
 
 ```bash
 make purge-crds

@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	TemplateFinalizer = "sandbox.kce.ksyun.com/sandboxtemplate-finalizer"
-	SandboxFinalizer  = "sandbox.kce.ksyun.com/sandbox-finalizer"
-	ClaimFinalizer    = "sandbox.kce.ksyun.com/sandboxclaim-finalizer"
-	FastRequeue       = 5 * time.Second
+	TemplateFinalizer          = "sandbox.kce.ksyun.com/sandboxtemplate-finalizer"
+	SandboxFinalizer           = "sandbox.kce.ksyun.com/sandbox-finalizer"
+	ClaimFinalizer             = "sandbox.kce.ksyun.com/sandboxclaim-finalizer"
+	FastRequeue                = 5 * time.Second
+	SandboxDeleteRetryInterval = time.Minute
 )
 
 type SandboxTemplateReconciler struct {
@@ -126,6 +127,9 @@ func (r *SandboxReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 				return ctrl.Result{}, err
 			}
 			if !deleted {
+				if err := r.retryStaleSandboxDelete(ctx, &obj); err != nil {
+					return ctrl.Result{}, err
+				}
 				return ctrl.Result{RequeueAfter: FastRequeue}, nil
 			}
 			return ctrl.Result{}, removeFinalizer(ctx, r.Client, &obj, SandboxFinalizer)
@@ -441,6 +445,25 @@ func (r *SandboxReconciler) sandboxDeletedFromOpenAPI(ctx context.Context, obj *
 		return false, err
 	}
 	return err != nil || remote == nil, nil
+}
+
+func (r *SandboxReconciler) retryStaleSandboxDelete(ctx context.Context, obj *sandboxv1.Sandbox) error {
+	lastAttempt := obj.DeletionTimestamp.Time
+	if value := annotations.Get(obj.Annotations, annotations.DeleteRetryAt); value != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+			lastAttempt = parsed
+		}
+	}
+	if time.Since(lastAttempt) < SandboxDeleteRetryInterval {
+		return nil
+	}
+	deleteErr := r.deleteSandboxFromOpenAPI(ctx, obj)
+	base := obj.DeepCopyObject().(client.Object)
+	obj.Annotations = annotations.Set(obj.Annotations, annotations.DeleteRetryAt, time.Now().UTC().Format(time.RFC3339Nano))
+	if err := r.Patch(ctx, obj, client.MergeFrom(base)); err != nil {
+		return err
+	}
+	return deleteErr
 }
 
 func (r *SandboxClaimReconciler) ensureClaimSandboxes(ctx context.Context, claim *sandboxv1.SandboxClaim) error {

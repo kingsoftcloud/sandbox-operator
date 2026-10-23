@@ -3,7 +3,7 @@
 This directory contains operator deployment resources that do not depend on Helm:
 
 - `00-namespace.yaml`: operator namespace.
-- `01-crd.yaml`: `SandboxTemplate`, `Sandbox`, and `SandboxClaim` CRDs.
+- `01-crd.yaml`: `SandboxTemplate`, `Sandbox`, `SandboxClaim`, and `SandboxImageCommit` CRDs.
 - `02-rbac.yaml`: ServiceAccount, ClusterRole, and ClusterRoleBinding.
 - `03-config.yaml`: operator configuration ConfigMap.
 - `04-manager.yaml`: operator Deployment.
@@ -17,7 +17,7 @@ From the repository root, run:
 make deploy
 ```
 
-The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019`; no image-pull credential is needed. To use your own image, override it when deploying:
+The command applies these resources in the required order, creates the webhook TLS Secret, and patches the webhook CA bundle. It uses the public image `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261022`; no image-pull credential is needed. To use your own image, override it when deploying:
 
 ```bash
 make deploy IMG=my-registry.example.com/sandbox-operator:v0.1.0

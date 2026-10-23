@@ -5,13 +5,15 @@ import "encoding/json"
 const (
 	Prefix = "sandbox.kce.ksyun.com/"
 
-	TemplateID      = Prefix + "template-id"
-	SandboxID       = Prefix + "sandbox-id"
-	SandboxIDs      = Prefix + "sandbox-ids"
-	InlineTemplate  = Prefix + "inline-template"
-	Endpoint        = Prefix + "endpoint"
-	Token           = Prefix + "token"
-	DeleteRequested = Prefix + "delete-requested"
+	TemplateID        = Prefix + "template-id"
+	SandboxID         = Prefix + "sandbox-id"
+	SandboxIDs        = Prefix + "sandbox-ids"
+	InlineTemplate    = Prefix + "inline-template"
+	Endpoint          = Prefix + "endpoint"
+	Token             = Prefix + "token"
+	DeleteRequested   = Prefix + "delete-requested"
+	DeleteRetryAt     = Prefix + "delete-retry-at"
+	ImageCommitTaskID = Prefix + "image-commit-task-id"
 )
 
 var ReservedKeys = []string{
@@ -22,6 +24,8 @@ var ReservedKeys = []string{
 	Endpoint,
 	Token,
 	DeleteRequested,
+	DeleteRetryAt,
+	ImageCommitTaskID,
 }
 
 func HasReserved(values map[string]string) (string, bool) {

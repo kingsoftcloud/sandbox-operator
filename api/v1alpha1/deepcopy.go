@@ -42,3 +42,11 @@ func (in *SandboxClaim) DeepCopyObject() runtime.Object {
 func (in *SandboxClaimList) DeepCopyObject() runtime.Object {
 	return copyJSON(in)
 }
+
+func (in *SandboxImageCommit) DeepCopyObject() runtime.Object {
+	return copyJSON(in)
+}
+
+func (in *SandboxImageCommitList) DeepCopyObject() runtime.Object {
+	return copyJSON(in)
+}

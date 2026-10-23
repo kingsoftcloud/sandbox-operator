@@ -65,6 +65,8 @@ type Interface interface {
 	DeleteSandbox(ctx context.Context, cred Credential, instanceIDs []string) error
 	GetSandbox(ctx context.Context, cred Credential, instanceID string) (*Sandbox, error)
 	ListSandboxes(ctx context.Context, cred Credential, req ListSandboxesRequest) (*SandboxList, error)
+	CreateSandboxImageCommit(ctx context.Context, cred Credential, req CreateSandboxImageCommitRequest) (*CreateSandboxImageCommitResponse, error)
+	GetSandboxImageCommit(ctx context.Context, cred Credential, instanceID, taskID string) (*SandboxImageCommit, error)
 }
 
 type Client struct {
@@ -401,7 +403,33 @@ func (c *Client) UpdateSandbox(ctx context.Context, cred Credential, req UpdateS
 }
 
 func (c *Client) DeleteSandbox(ctx context.Context, cred Credential, instanceIDs []string) error {
-	return c.action(ctx, cred, "DeleteSandboxInstance", map[string][]string{"InstanceIds": instanceIDs}, nil)
+	var result struct {
+		SuccessDeleted []string `json:"SuccessDeleted"`
+		FailedDeleted  []struct {
+			InstanceID   string `json:"InstanceId"`
+			FailedReason string `json:"FailedReason"`
+		} `json:"FailedDeleted"`
+	}
+	if err := c.action(ctx, cred, "DeleteSandboxInstance", map[string][]string{"InstanceIds": instanceIDs}, &result); err != nil {
+		return err
+	}
+	succeeded := make(map[string]bool, len(result.SuccessDeleted))
+	for _, id := range result.SuccessDeleted {
+		succeeded[id] = true
+	}
+	failed := make(map[string]string, len(result.FailedDeleted))
+	for _, item := range result.FailedDeleted {
+		failed[item.InstanceID] = item.FailedReason
+	}
+	for _, id := range instanceIDs {
+		if reason, ok := failed[id]; ok {
+			return fmt.Errorf("openapi DeleteSandboxInstance did not delete sandbox %s: %s", id, reason)
+		}
+		if !succeeded[id] {
+			return fmt.Errorf("openapi DeleteSandboxInstance did not confirm deletion of sandbox %s", id)
+		}
+	}
+	return nil
 }
 
 func (c *Client) GetSandbox(ctx context.Context, cred Credential, instanceID string) (*Sandbox, error) {
@@ -416,4 +444,20 @@ func (c *Client) GetSandbox(ctx context.Context, cred Credential, instanceID str
 func (c *Client) ListSandboxes(ctx context.Context, cred Credential, req ListSandboxesRequest) (*SandboxList, error) {
 	var out SandboxList
 	return &out, c.action(ctx, cred, "GetSandboxInstanceList", req, &out)
+}
+
+func (c *Client) CreateSandboxImageCommit(ctx context.Context, cred Credential, req CreateSandboxImageCommitRequest) (*CreateSandboxImageCommitResponse, error) {
+	var out CreateSandboxImageCommitResponse
+	if err := c.action(ctx, cred, "CreateSandboxInstanceCommit", req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *Client) GetSandboxImageCommit(ctx context.Context, cred Credential, instanceID, taskID string) (*SandboxImageCommit, error) {
+	var out SandboxImageCommit
+	if err := c.action(ctx, cred, "GetSandboxInstanceCommit", map[string]string{"InstanceId": instanceID, "TaskId": taskID}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }

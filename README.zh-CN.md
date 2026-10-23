@@ -15,15 +15,17 @@ Sandbox Operator 将金山云 Sandbox OpenAPI 中的资源抽象为 Kubernetes �
 | `SandboxTemplate` | `stpl` | 沙箱模板，描述镜像、计算资源、网络、存储、日志和预热池配置。 |
 | `Sandbox` | `sbx` | 单个沙箱实例。 |
 | `SandboxClaim` | `sbxc` | 一次性批量创建多个沙箱实例的声明。 |
+| `SandboxImageCommit` | `sbxic` | 将运行中的沙箱提交为镜像并跟踪任务状态。 |
 
 operator 支持以下双向同步：
 
 - **OpenAPI → Kubernetes**：operator 周期性查询 Sandbox OpenAPI，将模板和沙箱实例状态同步为集群中的 CR。
 - **Kubernetes → OpenAPI**：创建、更新、删除 `SandboxTemplate` 和 `Sandbox` CR 时，operator 调用对应的 Sandbox OpenAPI。`SandboxClaim` 是一次性创建声明，删除 Claim 不会删除已创建的实例。
+- **镜像提交**：创建 `SandboxImageCommit` 后，operator 发起提交任务并查询状态直至终态。
 
 ## 功能
 
-- 提供 `SandboxTemplate`、`Sandbox` 和 `SandboxClaim` 三个 CRD。
+- 提供 `SandboxTemplate`、`Sandbox`、`SandboxClaim` 和 `SandboxImageCommit` 四个 CRD。
 - 支持 Sandbox OpenAPI 与 Kubernetes CR 的双向同步。
 - 通过 Mutating 和 Validating Admission Webhook 操作和校验 CR。
 - 支持 Helm 和原生 Kubernetes Manifest 两种部署方式。
@@ -55,7 +57,7 @@ helm upgrade --install sandbox-operator charts/sandbox-operator \
 make deploy
 ```
 
-两种方式默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019`，无需镜像拉取凭据。自建镜像和私有仓库配置见 [部署说明](docs/zh-CN/deployment.md)。
+两种方式默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261022`，无需镜像拉取凭据。自建镜像和私有仓库配置见 [部署说明](docs/zh-CN/deployment.md)。
 
 常用部署参数：
 

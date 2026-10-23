@@ -1,6 +1,6 @@
 # 部署 Sandbox Operator
 
-默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019`，无需镜像仓库凭据。
+默认使用公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261022`，无需镜像仓库凭据。
 
 ## 快速部署
 
@@ -138,7 +138,7 @@ kubectl -n sandbox-demo create secret generic sandbox-openapi-credentials \
 
 ## 使用自建镜像
 
-默认使用的是公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261019`，无需镜像仓库凭据。
+默认使用的是公共镜像 `hub.kce.ksyun.com/ksyun-public/sandbox-operator:v20261022`，无需镜像仓库凭据。
 需要自行构建镜像时，先构建并推送到集群可访问的仓库：
 
 ```bash
@@ -185,7 +185,7 @@ Helm 部署时追加 `--set imagePullSecrets[0].name=sandbox-operator-image-pull
 
 升级到新版本时不需要、也不建议先执行 `make undeploy` 或 `helm uninstall`。卸载会造成服务中断；原生 Manifest 卸载还会删除 Operator 命名空间中的配置和 webhook 证书。
 
-使用原生 Manifest 部署的环境，在拉取最新代码后直接重复执行部署命令。`make deploy` 会更新 CRD、ConfigMap、RBAC、Deployment 和 webhook，切换到默认镜像 `v20261019`，然后滚动重启并等待 Operator 就绪：
+使用原生 Manifest 部署的环境，在拉取最新代码后直接重复执行部署命令。`make deploy` 会更新 CRD、ConfigMap、RBAC、Deployment 和 webhook，切换到默认镜像 `v20261022`，然后滚动重启并等待 Operator 就绪：
 
 ```bash
 git pull
@@ -200,7 +200,7 @@ make deploy \
   OPENAPI_BASE_URL=http://aicp.cn-beijing-6.inner.api.ksyun.com
 ```
 
-使用 Helm 部署的环境，先显式更新 CRD，再复用安装命令升级。Helm 不会在 `helm upgrade` 时自动更新 Chart `crds/` 目录中的 CRD，因此新增 NFS 字段时不能省略第一条命令：
+使用 Helm 部署的环境，先显式更新 CRD，再复用安装命令升级。Helm 不会在 `helm upgrade` 时自动更新 Chart `crds/` 目录中的 CRD，因此新增资源（包括 `SandboxImageCommit`）时不能省略第一条命令：
 
 ```bash
 git pull

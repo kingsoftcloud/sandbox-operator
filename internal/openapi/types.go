@@ -333,6 +333,33 @@ type StartSandboxResponse struct {
 	Timeout    int    `json:"Timeout,omitempty"`
 }
 
+type CreateSandboxImageCommitRequest struct {
+	InstanceID       string `json:"InstanceId"`
+	Image            string `json:"Image"`
+	RegistryUsername string `json:"RegistryUsername,omitempty"`
+	RegistryPassword string `json:"RegistryPassword,omitempty"`
+}
+
+type CreateSandboxImageCommitResponse struct {
+	TaskID string `json:"TaskId"`
+	Status string `json:"Status"`
+	Image  string `json:"Image"`
+}
+
+type SandboxImageCommit struct {
+	TaskID         string `json:"TaskId"`
+	Status         string `json:"Status"`
+	Image          string `json:"Image"`
+	ErrorCode      string `json:"ErrorCode"`
+	Message        string `json:"Message"`
+	ImageDigest    string `json:"ImageDigest"`
+	ImageRef       string `json:"ImageRef"`
+	CreatedAt      string `json:"CreatedAt"`
+	StartedAt      string `json:"StartedAt"`
+	FinishedAt     string `json:"FinishedAt"`
+	LastObservedAt string `json:"LastObservedAt"`
+}
+
 func (r StartSandboxResponse) Identifier() string {
 	return r.InstanceID
 }
