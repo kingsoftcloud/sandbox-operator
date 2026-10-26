@@ -309,6 +309,9 @@ func (r *SandboxReconciler) bindAndSyncSandbox(ctx context.Context, obj *sandbox
 		if openapi.IsNotFound(err) {
 			return r.handleMissingSandbox(ctx, obj)
 		}
+		if statusErr := markSandboxSyncError(ctx, r.Client, obj, err); statusErr != nil {
+			return statusErr
+		}
 		return err
 	}
 	log.FromContext(ctx).V(1).Info("fetched sandbox from openapi",
@@ -326,6 +329,15 @@ func (r *SandboxReconciler) bindAndSyncSandbox(ctx context.Context, obj *sandbox
 		if err := r.Status().Update(ctx, obj); err != nil {
 			return ignoreConflict(err)
 		}
+	}
+	return nil
+}
+
+func markSandboxSyncError(ctx context.Context, c client.Client, obj *sandboxv1.Sandbox, cause error) error {
+	before := cloneForCompare(obj.Status)
+	statusutil.SetCondition(&obj.Status.Conditions, sandboxv1.ConditionSynced, "False", "OpenAPIQueryFailed", cause.Error(), obj.Generation)
+	if hasChanged(before, obj.Status) {
+		return ignoreConflict(c.Status().Update(ctx, obj))
 	}
 	return nil
 }
@@ -426,6 +438,22 @@ func (r *SandboxReconciler) sandboxDeletedFromOpenAPI(ctx context.Context, obj *
 	sandboxID := annotations.Get(obj.Annotations, annotations.SandboxID)
 	if sandboxID != "" {
 		remote, err := r.OpenAPI.GetSandbox(ctx, openapiCred, sandboxID)
+		if openapi.IsSandboxServiceError(err) {
+			remotes, listErr := (&Poller{OpenAPI: r.OpenAPI}).listAllSandboxes(ctx, openapiCred)
+			if listErr != nil {
+				return false, listErr
+			}
+			found := false
+			for _, item := range remotes {
+				if item.Identifier() == sandboxID {
+					found = true
+					break
+				}
+			}
+			if !found {
+				remote, err = nil, nil
+			}
+		}
 		if err != nil && !openapi.IsNotFound(err) {
 			return false, err
 		}

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -450,6 +451,126 @@ func TestPollerDoesNotAdoptStaleSandboxListItem(t *testing.T) {
 	if len(sandboxes.Items) != 0 {
 		t.Fatalf("stale list item must not be adopted: %#v", sandboxes.Items)
 	}
+}
+
+func TestPollerContinuesAdoptionAfterSandboxDetailFailure(t *testing.T) {
+	for _, oldStillListed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "missing", true: "still-listed"}[oldStillListed], func(t *testing.T) {
+			ctx := context.Background()
+			scheme := runtime.NewScheme()
+			if err := sandboxv1.AddToScheme(scheme); err != nil {
+				t.Fatal(err)
+			}
+			old := &sandboxv1.Sandbox{ObjectMeta: metav1.ObjectMeta{
+				Name: "old", Namespace: "sandbox-demo", Finalizers: []string{SandboxFinalizer},
+				Annotations: map[string]string{annotations.SandboxID: "old-id"},
+			}}
+			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(old).WithStatusSubresource(&sandboxv1.Sandbox{}).Build()
+			api := &sandboxDetailFailureOpenAPI{oldStillListed: oldStillListed}
+			p := &Poller{Client: c, OpenAPI: api, AdoptExternal: true}
+			err := p.syncSandboxes(ctx, old.Namespace, openapi.Credential{})
+			if oldStillListed && err == nil {
+				t.Fatal("unresolved detail failure must be reported")
+			}
+			if !oldStillListed && err != nil {
+				t.Fatalf("confirmed missing sandbox: %v", err)
+			}
+			var adopted sandboxv1.Sandbox
+			if err := c.Get(ctx, types.NamespacedName{Namespace: old.Namespace, Name: "new"}, &adopted); err != nil {
+				t.Fatalf("new sandbox must be adopted: %v", err)
+			}
+			var existing sandboxv1.Sandbox
+			if err := c.Get(ctx, types.NamespacedName{Namespace: old.Namespace, Name: old.Name}, &existing); err != nil {
+				t.Fatal(err)
+			}
+			if got := annotations.Get(existing.Annotations, annotations.DeleteRequested) == "true"; got != !oldStillListed {
+				t.Fatalf("unexpected delete-requested=%v", got)
+			}
+		})
+	}
+}
+
+func TestSandboxDeleteBarrierConfirmsMaskedNotFoundWithList(t *testing.T) {
+	ctx := context.Background()
+	r := &SandboxReconciler{OpenAPI: &sandboxDetailFailureOpenAPI{}}
+	obj := &sandboxv1.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Annotations: map[string]string{annotations.SandboxID: "old-id"},
+	}}
+	// A credential manager is required for the real deletion barrier; exercise
+	// the list cross-check through a fake secret in the same namespace.
+	obj.Namespace = "sandbox-demo"
+	scheme := runtime.NewScheme()
+	if err := sandboxv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: credentials.DefaultOpenAPISecretName, Namespace: obj.Namespace}, Data: map[string][]byte{
+		credentials.KeyAccessKeyID: []byte("ak"), credentials.KeySecretAccessKey: []byte("sk"), credentials.KeyRegion: []byte("cn-beijing-6"),
+	}}
+	r.Client = fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
+	r.Credentials = credentials.NewManager(r.Client, credentials.DefaultOpenAPISecretName)
+	deleted, err := r.sandboxDeletedFromOpenAPI(ctx, obj)
+	if err != nil || !deleted {
+		t.Fatalf("missing sandbox should clear deletion barrier: deleted=%v err=%v", deleted, err)
+	}
+	r.OpenAPI = &sandboxDetailFailureOpenAPI{oldStillListed: true}
+	deleted, err = r.sandboxDeletedFromOpenAPI(ctx, obj)
+	if err == nil || deleted {
+		t.Fatalf("listed sandbox must keep deletion barrier: deleted=%v err=%v", deleted, err)
+	}
+}
+
+func TestPollerKeepsSandboxWhenListFails(t *testing.T) {
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	if err := sandboxv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	old := &sandboxv1.Sandbox{ObjectMeta: metav1.ObjectMeta{
+		Name: "old", Namespace: "sandbox-demo", Finalizers: []string{SandboxFinalizer},
+		Annotations: map[string]string{annotations.SandboxID: "old-id"},
+	}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(old).WithStatusSubresource(&sandboxv1.Sandbox{}).Build()
+	p := &Poller{Client: c, OpenAPI: &sandboxDetailFailureOpenAPI{listErr: errors.New("list unavailable")}, AdoptExternal: true}
+	if err := p.syncSandboxes(ctx, old.Namespace, openapi.Credential{}); err == nil {
+		t.Fatal("list failure must be reported")
+	}
+	var current sandboxv1.Sandbox
+	if err := c.Get(ctx, types.NamespacedName{Namespace: old.Namespace, Name: old.Name}, &current); err != nil {
+		t.Fatal(err)
+	}
+	if annotations.Get(current.Annotations, annotations.DeleteRequested) != "" {
+		t.Fatal("list failure must not cause sandbox deletion")
+	}
+}
+
+type sandboxDetailFailureOpenAPI struct {
+	countingOpenAPI
+	oldStillListed bool
+	listErr        error
+}
+
+func (c *sandboxDetailFailureOpenAPI) GetSandbox(_ context.Context, _ openapi.Credential, id string) (*openapi.Sandbox, error) {
+	if id == "old-id" {
+		return nil, &openapi.APIError{Action: "GetSandboxInstance", StatusCode: 400, Code: "SandboxServiceError"}
+	}
+	return &openapi.Sandbox{InstanceID: id, SandboxName: "new", TemplateID: "template-1", Status: "RUNNING"}, nil
+}
+
+func (c *sandboxDetailFailureOpenAPI) ListSandboxes(_ context.Context, _ openapi.Credential, req openapi.ListSandboxesRequest) (*openapi.SandboxList, error) {
+	if c.listErr != nil {
+		return nil, c.listErr
+	}
+	if req.State != "" {
+		return &openapi.SandboxList{}, nil
+	}
+	items := []openapi.Sandbox{{InstanceID: "new-id", SandboxName: "new", TemplateID: "template-1", Status: "RUNNING"}}
+	if c.oldStillListed {
+		items = append(items, openapi.Sandbox{InstanceID: "old-id"})
+	}
+	return &openapi.SandboxList{Items: items, Total: len(items)}, nil
 }
 
 type countingOpenAPI struct {

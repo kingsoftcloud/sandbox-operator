@@ -259,6 +259,12 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 	knownIDs := map[string]bool{}
 	knownByID := map[string]*sandboxv1.Sandbox{}
 	knownNames := map[string]bool{}
+	var firstErr error
+	type failedLookup struct {
+		obj *sandboxv1.Sandbox
+		err error
+	}
+	var failedLookups []failedLookup
 
 	for i := range local.Items {
 		obj := &local.Items[i]
@@ -283,7 +289,13 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 				}
 				continue
 			}
-			return err
+			if statusErr := markSandboxSyncError(ctx, p.Client, obj, err); statusErr != nil {
+				if firstErr == nil {
+					firstErr = statusErr
+				}
+			}
+			failedLookups = append(failedLookups, failedLookup{obj: obj, err: err})
+			continue
 		}
 		logger.V(1).Info("fetched sandbox from openapi",
 			append([]any{"name", obj.Name, "sandboxID", sandboxID}, sandboxOpenAPIDebugValues(*remote)...)...)
@@ -308,6 +320,22 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 			return err
 		}
 		logger.V(1).Info("listed sandboxes from openapi", "remoteCount", len(remotes), "localCount", len(local.Items))
+		remoteIDs := make(map[string]bool, len(remotes))
+		for _, remote := range remotes {
+			remoteIDs[remote.Identifier()] = true
+		}
+		for _, failed := range failedLookups {
+			id := annotations.Get(failed.obj.Annotations, annotations.SandboxID)
+			if openapi.IsSandboxServiceError(failed.err) && !remoteIDs[id] {
+				if err := p.handleMissingSandbox(ctx, failed.obj); err != nil && firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			if firstErr == nil {
+				firstErr = failed.err
+			}
+		}
 		adopted := 0
 		for _, remote := range remotes {
 			sandboxID := remote.Identifier()
@@ -334,7 +362,11 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 				if openapi.IsNotFound(err) {
 					continue
 				}
-				return err
+				logger.Error(err, "cannot verify sandbox from openapi list", "sandboxID", sandboxID)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
 			}
 			remote = *detail
 			logger.V(1).Info("listed sandbox from openapi",
@@ -376,7 +408,10 @@ func (p *Poller) syncSandboxes(ctx context.Context, namespace string, cred opena
 			logger.Info("adopted sandboxes from openapi", "count", adopted)
 		}
 	}
-	return nil
+	if firstErr == nil && len(failedLookups) > 0 && !p.AdoptExternal {
+		firstErr = failedLookups[0].err
+	}
+	return firstErr
 }
 
 func (p *Poller) listAllTemplates(ctx context.Context, cred openapi.Credential) ([]openapi.Template, error) {

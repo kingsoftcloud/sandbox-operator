@@ -53,6 +53,13 @@ func IsNotFound(err error) bool {
 	return false
 }
 
+// IsSandboxServiceError identifies the gateway error that currently also wraps
+// some missing sandbox instances. Callers must confirm absence separately.
+func IsSandboxServiceError(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Action == "GetSandboxInstance" && apiErr.Code == "SandboxServiceError"
+}
+
 type Interface interface {
 	CreateTemplate(ctx context.Context, cred Credential, req CreateTemplateRequest) (*CreateTemplateResponse, error)
 	UpdateTemplate(ctx context.Context, cred Credential, req UpdateTemplateRequest) error
