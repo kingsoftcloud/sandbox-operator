@@ -407,6 +407,7 @@ kubectl get sbxic -n sandbox-demo commit-demo -o yaml
 | `metadata.annotations["sandbox.kce.ksyun.com/sandbox-id"]` | 平台实例 ID。 |
 | `metadata.annotations["sandbox.kce.ksyun.com/template-id"]` | 平台模板 ID。 |
 | `status.phase` | 实例状态。 |
+| `status.phaseTransitionTime` | OpenAPI 返回的实例阶段转换时间（`PhaseTransitionTime`），由 Operator 直接同步；OpenAPI 未返回有效时间时不使用本机观察时间填充。 |
 | `status.failure.code` | OpenAPI 返回的结构化实例失败错误码。仅失败时存在。 |
 | `status.failure.message` | OpenAPI 返回的实例失败错误信息。仅失败时存在。 |
 | `status.timeoutSeconds` | 实例超时时间。 |
@@ -418,7 +419,7 @@ kubectl get sbxic -n sandbox-demo commit-demo -o yaml
 | `status.env` | 实例环境变量。 |
 | `status.ks3MountConfig` / `status.kpfsMountConfig` / `status.nfsMountConfig` | 实例挂载配置。 |
 | `status.endTime` | 实例结束时间。 |
-| `status.conditions` | 同步结果和异常信息。 |
+| `status.conditions` | 同步结果和异常信息；`Synced.lastTransitionTime` 仅表示同步条件变化时间，不表示实例状态变化时间。 |
 
 ### 4.3 SandboxClaim
 

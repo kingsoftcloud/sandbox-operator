@@ -43,6 +43,7 @@ type SandboxInlineTemplate struct {
 type SandboxStatus struct {
 	ExternalUpdatedAt   *metav1.Time                `json:"externalUpdatedAt,omitempty"`
 	Phase               Phase                       `json:"phase,omitempty"`
+	PhaseTransitionTime *metav1.Time                `json:"phaseTransitionTime,omitempty"`
 	TimeoutSeconds      int                         `json:"timeoutSeconds,omitempty"`
 	CreateTime          *metav1.Time                `json:"createTime,omitempty"`
 	EndTime             *metav1.Time                `json:"endTime,omitempty"`

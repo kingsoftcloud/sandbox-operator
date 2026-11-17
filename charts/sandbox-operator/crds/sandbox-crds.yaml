@@ -350,6 +350,10 @@ spec:
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true
+              properties:
+                phaseTransitionTime:
+                  type: string
+                  format: date-time
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition

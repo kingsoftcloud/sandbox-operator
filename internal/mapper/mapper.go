@@ -290,6 +290,7 @@ func ApplySandboxSpecFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox)
 func ApplySandboxStatusFromOpenAPI(obj *sandboxv1.Sandbox, remote openapi.Sandbox) {
 	obj.Status.ExternalUpdatedAt = metaTimeString(remote.EndTime)
 	obj.Status.Phase = SandboxPhase(remote.Status)
+	obj.Status.PhaseTransitionTime = metaTimeString(remote.PhaseTransitionTime)
 	obj.Status.TimeoutSeconds = remote.Timeout
 	obj.Status.CreateTime = metaTimeString(remote.CreateTime)
 	obj.Status.EndTime = metaTimeString(remote.EndTime)

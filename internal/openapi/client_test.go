@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -41,6 +42,23 @@ func TestSandboxServiceErrorNeedsListConfirmation(t *testing.T) {
 	}
 	if IsSandboxServiceError(&APIError{Action: "GetSandboxTemplate", Code: "SandboxServiceError"}) {
 		t.Fatal("template errors must not use the sandbox compatibility path")
+	}
+}
+
+func TestSandboxPhaseTransitionTimeDecodesFromDetailAndList(t *testing.T) {
+	var detail Sandbox
+	if err := json.Unmarshal([]byte(`{"InstanceId":"id-1","PhaseTransitionTime":"2026-11-17T02:00:00Z"}`), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.PhaseTransitionTime != "2026-11-17T02:00:00Z" {
+		t.Fatalf("detail phase transition time: %q", detail.PhaseTransitionTime)
+	}
+	var list SandboxList
+	if err := json.Unmarshal([]byte(`{"InstanceSet":[{"InstanceId":"id-1","PhaseTransitionTime":"2026-11-17T02:00:00Z"}]}`), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Items) != 1 || list.Items[0].PhaseTransitionTime != detail.PhaseTransitionTime {
+		t.Fatalf("list phase transition time: %#v", list.Items)
 	}
 }
 

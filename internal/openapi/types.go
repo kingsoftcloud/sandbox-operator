@@ -92,6 +92,7 @@ type Sandbox struct {
 	Timeout             int                  `json:"Timeout,omitempty"`
 	CreateTime          string               `json:"CreateTime,omitempty"`
 	EndTime             string               `json:"EndTime,omitempty"`
+	PhaseTransitionTime string               `json:"PhaseTransitionTime,omitempty"`
 	Endpoint            string               `json:"Endpoint,omitempty"`
 	Domain              string               `json:"Domain,omitempty"`
 	AccessURL           *URLs                `json:"AccessUrl,omitempty"`

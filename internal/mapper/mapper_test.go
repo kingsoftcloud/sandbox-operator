@@ -563,6 +563,27 @@ func TestApplySandboxStatusPreservesAccessURLWhenDetailOmitsIt(t *testing.T) {
 	}
 }
 
+func TestApplySandboxStatusTracksPhaseTransitionTime(t *testing.T) {
+	obj := &sandboxv1.Sandbox{}
+	check := func(status, remoteTime, expectedTime string) {
+		t.Helper()
+		ApplySandboxStatusFromOpenAPI(obj, openapi.Sandbox{Status: status, PhaseTransitionTime: remoteTime})
+		if obj.Status.PhaseTransitionTime == nil || obj.Status.PhaseTransitionTime.UTC().Format("2006-01-02T15:04:05Z") != expectedTime {
+			t.Fatalf("phase=%s remoteTime=%q got=%v, want=%s", status, remoteTime, obj.Status.PhaseTransitionTime, expectedTime)
+		}
+	}
+	check("RUNNING", "2026-11-17T02:00:00Z", "2026-11-17T02:00:00Z")
+	check("RUNNING", "2026-11-17T02:01:00Z", "2026-11-17T02:01:00Z")
+	check("PAUSED", "2026-11-17T03:00:00Z", "2026-11-17T03:00:00Z")
+	if obj.Status.Phase != sandboxv1.PhasePaused {
+		t.Fatalf("phase=%s, want Paused", obj.Status.Phase)
+	}
+	ApplySandboxStatusFromOpenAPI(obj, openapi.Sandbox{Status: "FAILED"})
+	if obj.Status.PhaseTransitionTime != nil {
+		t.Fatalf("missing OpenAPI time must not reuse or invent a time: %v", obj.Status.PhaseTransitionTime)
+	}
+}
+
 func TestApplySandboxListStatusFromOpenAPI(t *testing.T) {
 	obj := &sandboxv1.Sandbox{}
 

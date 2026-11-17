@@ -407,6 +407,7 @@ The Sandbox DELETE webhook checks `SandboxImageCommit` resources in the same nam
 | `metadata.annotations["sandbox.kce.ksyun.com/sandbox-id"]` | Platform instance ID. |
 | `metadata.annotations["sandbox.kce.ksyun.com/template-id"]` | Platform template ID. |
 | `status.phase` | Instance phase. |
+| `status.phaseTransitionTime` | Instance phase transition time returned by OpenAPI as `PhaseTransitionTime`. The Operator does not substitute its own observation time when OpenAPI omits a valid timestamp. |
 | `status.failure.code` | Structured instance failure code returned by OpenAPI. Present only on failure. |
 | `status.failure.message` | Instance failure message returned by OpenAPI. Present only on failure. |
 | `status.timeoutSeconds` | Instance timeout. |
@@ -418,7 +419,7 @@ The Sandbox DELETE webhook checks `SandboxImageCommit` resources in the same nam
 | `status.env` | Instance environment variables. |
 | `status.ks3MountConfig` / `status.kpfsMountConfig` / `status.nfsMountConfig` | Instance mount configuration. |
 | `status.endTime` | Instance end time. |
-| `status.conditions` | Sync result and exception information. |
+| `status.conditions` | Sync result and exception information. `Synced.lastTransitionTime` tracks changes in the sync condition, not instance phase changes. |
 
 ### 4.3 SandboxClaim
 
